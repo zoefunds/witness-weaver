@@ -57,7 +57,11 @@ export async function authRoutes(app: FastifyInstance) {
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     });
-    return reply.send({ user: { id: user.id, walletAddress: user.wallet_address } });
+    // Also returned in the body so the frontend can store it itself and
+    // send it back as `Authorization: Bearer <token>` — the reliable path
+    // cross-site, since the cookie above can be silently dropped by
+    // third-party-cookie blocking in Vercel/Fly.io's split-domain setup.
+    return reply.send({ user: { id: user.id, walletAddress: user.wallet_address }, token });
   });
 
   app.post("/auth/logout", async (req, reply) => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { api, ApiError } from "./api";
+import { clearAuthToken, getAuthToken, setAuthToken } from "./authToken";
 
 export interface AuthUser {
   id: string;
@@ -25,11 +26,19 @@ export function useAuth() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // No stored token yet — skip the round trip rather than firing a
+    // request that can only ever come back 401.
+    if (!getAuthToken()) {
+      setUser(null);
+      setStatus("idle");
+      return;
+    }
     try {
       const { user } = await api.get<{ user: AuthUser }>("/auth/me");
       setUser(user);
       setStatus("authenticated");
     } catch {
+      clearAuthToken();
       setUser(null);
       setStatus("idle");
     }
@@ -46,7 +55,11 @@ export function useAuth() {
     try {
       const { message } = await api.post<{ message: string }>("/auth/nonce", { address });
       const signature = await signMessageAsync({ message });
-      const { user } = await api.post<{ user: AuthUser }>("/auth/verify", { address, signature });
+      const { user, token } = await api.post<{ user: AuthUser; token: string }>("/auth/verify", {
+        address,
+        signature,
+      });
+      setAuthToken(token);
       setUser(user);
       setStatus("authenticated");
     } catch (err) {
@@ -57,6 +70,7 @@ export function useAuth() {
 
   const signOut = useCallback(async () => {
     await api.post("/auth/logout").catch(() => undefined);
+    clearAuthToken();
     setUser(null);
     setStatus("idle");
   }, []);

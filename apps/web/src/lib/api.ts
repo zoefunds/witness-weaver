@@ -1,3 +1,5 @@
+import { getAuthToken } from "./authToken";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
 export class ApiError extends Error {
@@ -10,10 +12,18 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    // Still sent for local dev convenience (same-site cookie works fine
+    // there); the Authorization header below is what actually carries auth
+    // in production, where the cookie is cross-site and unreliable.
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, body);
