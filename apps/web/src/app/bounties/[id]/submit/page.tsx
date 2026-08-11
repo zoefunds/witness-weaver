@@ -19,7 +19,7 @@ interface EvidenceEntry {
 export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: bountyId } = use(params);
   const router = useRouter();
-  const { write, state, txHash, errorMessage } = useGenlayerWrite();
+  const { write, state, txHash, errorMessage, reset } = useGenlayerWrite();
 
   const [bounty, setBounty] = useState<Bounty | "loading" | "unreachable">("loading");
   const [statement, setStatement] = useState("");
@@ -29,6 +29,10 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
   const [newEvidenceKind, setNewEvidenceKind] = useState<EvidenceEntry["kind"]>("url");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Same reasoning as the create-bounty form: once the off-chain draft is
+  // created, a retry after a failed/rejected on-chain call reuses it
+  // instead of creating a duplicate testimony row every attempt.
+  const [draftTestimony, setDraftTestimony] = useState<Testimony | null>(null);
 
   useEffect(() => {
     api
@@ -52,6 +56,10 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    await submitOrRetry();
+  }
+
+  async function submitOrRetry() {
     setFormError(null);
 
     if (statement.trim().length < 20) {
@@ -77,15 +85,16 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
 
     setSubmitting(true);
     try {
-      const { testimony, statementHash } = await api.post<{ testimony: Testimony; statementHash: string }>(
-        "/testimonies",
-        {
-          bountyId,
-          statement,
-          isAnonymous,
-          evidence: evidence.map((e) => ({ kind: e.kind, url: e.url })),
-        },
-      );
+      const { testimony, statementHash } =
+        draftTestimony !== null
+          ? { testimony: draftTestimony, statementHash: draftTestimony.statement_hash }
+          : await api.post<{ testimony: Testimony; statementHash: string }>("/testimonies", {
+              bountyId,
+              statement,
+              isAnonymous,
+              evidence: evidence.map((e) => ({ kind: e.kind, url: e.url })),
+            });
+      setDraftTestimony(testimony);
 
       // The contract only ever receives the statement hash + evidence URLs —
       // never the full statement text — keeping witness privacy off-chain
@@ -214,9 +223,28 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           {formError && <p className="text-error text-sm">{formError}</p>}
           <TxLifecycle state={state} txHash={txHash} errorMessage={errorMessage} />
 
-          <Button type="submit" disabled={submitting} className="mt-2">
-            {submitting ? "Submitting…" : "Submit Testimony"}
-          </Button>
+          {draftTestimony && ["rejected", "failed", "timeout"].includes(state) ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-text-secondary text-sm">
+                Your statement was saved, but the on-chain anchor didn&apos;t go through. Retry without
+                re-entering anything.
+              </p>
+              <Button
+                type="button"
+                onClick={() => {
+                  reset();
+                  submitOrRetry();
+                }}
+                disabled={submitting}
+              >
+                {submitting ? "Retrying…" : "Retry On-Chain Submission"}
+              </Button>
+            </div>
+          ) : (
+            <Button type="submit" disabled={submitting} className="mt-2">
+              {submitting ? "Submitting…" : "Submit Testimony"}
+            </Button>
+          )}
         </form>
       </main>
       <Footer />
