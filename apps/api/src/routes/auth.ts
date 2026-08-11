@@ -44,8 +44,16 @@ export async function authRoutes(app: FastifyInstance) {
 
     reply.setCookie("ww_session", token, {
       httpOnly: true,
+      // Frontend (Vercel) and backend (Fly.io) are different domains, so
+      // this is a cross-site request from the browser's point of view.
+      // Cross-site cookies require SameSite=None + Secure — SameSite=Lax
+      // (the safer default) is silently dropped on cross-site fetch calls,
+      // which is why sign-in previously didn't persist. Locally, frontend
+      // and backend are both on `localhost` (different ports only), which
+      // the SameSite spec still treats as same-site, so `lax` there is
+      // correct and doesn't require HTTPS.
       secure: config.env === "production",
-      sameSite: "lax",
+      sameSite: config.env === "production" ? "none" : "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
     });
@@ -53,7 +61,13 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post("/auth/logout", async (req, reply) => {
-    reply.clearCookie("ww_session", { path: "/" });
+    // clearCookie must be issued with the same SameSite/Secure attributes
+    // the cookie was originally set with, or the browser won't match it.
+    reply.clearCookie("ww_session", {
+      path: "/",
+      secure: config.env === "production",
+      sameSite: config.env === "production" ? "none" : "lax",
+    });
     return reply.send({ ok: true });
   });
 
