@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import { config } from "./lib/config.js";
-import { authPlugin } from "./plugins/auth-plugin.js";
+import { attachAuthContext } from "./plugins/auth-plugin.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { bountyRoutes } from "./routes/bounties.js";
@@ -26,7 +26,10 @@ async function buildServer() {
     credentials: true,
   });
   await app.register(cookie);
-  await app.register(authPlugin);
+  // Called directly (not via app.register) so the session decorator/hook
+  // apply to the whole app, not just an isolated plugin context — see
+  // attachAuthContext's own comment for why that distinction matters.
+  attachAuthContext(app);
 
   await app.register(healthRoutes);
   await app.register(authRoutes);

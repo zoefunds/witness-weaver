@@ -2,16 +2,24 @@ import { randomBytes } from "node:crypto";
 import { verifyMessage } from "ethers";
 import jwt from "jsonwebtoken";
 import { config } from "./config.js";
+import { pool } from "./db.js";
 
-// Short-lived in-memory nonce store. A single always-on Fly.io machine holds
-// this in process memory; if scaled beyond one machine this must move to a
-// shared store (Postgres or Redis) since wallet auth is a two-step handshake.
-const pendingNonces = new Map<string, { nonce: string; expiresAt: number }>();
+// Nonces live in Postgres, not process memory: the API runs multiple
+// Fly.io machines behind a load balancer, and the nonce issued by
+// /auth/nonce needs to be readable by whichever machine happens to handle
+// the follow-up /auth/verify call — an in-memory Map only works if both
+// requests land on the exact same process, which they won't reliably.
 const NONCE_TTL_MS = 5 * 60_000;
 
-export function issueNonce(address: string): string {
+export async function issueNonce(address: string): Promise<string> {
   const nonce = randomBytes(16).toString("hex");
-  pendingNonces.set(address.toLowerCase(), { nonce, expiresAt: Date.now() + NONCE_TTL_MS });
+  const expiresAt = new Date(Date.now() + NONCE_TTL_MS);
+  await pool.query(
+    `insert into login_nonces (wallet_address, nonce, expires_at)
+     values ($1, $2, $3)
+     on conflict (wallet_address) do update set nonce = excluded.nonce, expires_at = excluded.expires_at`,
+    [address.toLowerCase(), nonce, expiresAt],
+  );
   return nonce;
 }
 
@@ -26,10 +34,14 @@ export function buildSignInMessage(address: string, nonce: string): string {
   ].join("\n");
 }
 
-export function verifySignedNonce(address: string, signature: string): boolean {
+export async function verifySignedNonce(address: string, signature: string): Promise<boolean> {
   const key = address.toLowerCase();
-  const entry = pendingNonces.get(key);
-  if (!entry || entry.expiresAt < Date.now()) {
+  const { rows } = await pool.query(
+    "select nonce, expires_at from login_nonces where wallet_address = $1",
+    [key],
+  );
+  const entry = rows[0];
+  if (!entry || new Date(entry.expires_at).getTime() < Date.now()) {
     return false;
   }
   const message = buildSignInMessage(address, entry.nonce);
@@ -40,7 +52,10 @@ export function verifySignedNonce(address: string, signature: string): boolean {
     return false;
   }
   const ok = recovered.toLowerCase() === key;
-  if (ok) pendingNonces.delete(key); // one-time use, prevents signature replay
+  if (ok) {
+    // one-time use, prevents signature replay
+    await pool.query("delete from login_nonces where wallet_address = $1", [key]);
+  }
   return ok;
 }
 

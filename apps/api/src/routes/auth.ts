@@ -16,7 +16,7 @@ export async function authRoutes(app: FastifyInstance) {
     const parsed = NonceRequestSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_address" });
 
-    const nonce = issueNonce(parsed.data.address);
+    const nonce = await issueNonce(parsed.data.address);
     const message = buildSignInMessage(parsed.data.address, nonce);
     return reply.send({ message });
   });
@@ -28,7 +28,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_payload" });
 
     const { address, signature } = parsed.data;
-    const ok = verifySignedNonce(address, signature);
+    const ok = await verifySignedNonce(address, signature);
     if (!ok) return reply.code(401).send({ error: "signature_verification_failed" });
 
     const normalized = address.toLowerCase();
