@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { useAppKitProvider } from "@reown/appkit/react";
 import { TransactionStatus } from "genlayer-js/types";
-import { CONTRACT_ADDRESS, getWriteClient, isContractConfigured, toJsonRpcAccount } from "./genlayer-client";
+import { CONTRACT_ADDRESS, getWriteClient, isContractConfigured } from "./genlayer-client";
 import type { TxState } from "@/components/tx/TxLifecycle";
 
 interface WriteOptions {
@@ -93,7 +93,13 @@ export function useGenlayerWrite() {
         const hash = await withRateLimitRetry(
           () =>
             client.writeContract({
-              account: toJsonRpcAccount(address as `0x${string}`),
+              // No `account` here on purpose — it falls back to the client's
+              // own `account`, which genlayer-js/viem already normalized
+              // correctly when getWriteClient created it. Passing one here
+              // explicitly is what caused the two earlier bugs (an
+              // unnormalized string breaking `.address` lookups, then an
+              // object breaking wallet-signing method routing) — the
+              // client-level account is the only place this should be set.
               address: CONTRACT_ADDRESS,
               functionName: opts.functionName,
               // eslint-disable-next-line @typescript-eslint/no-explicit-any -- args are call-site specific per contract function; CalldataEncodable union is narrower than our generic option type

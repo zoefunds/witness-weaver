@@ -24,19 +24,6 @@ export function getReadClient() {
 }
 
 /**
- * The account genlayer-js expects here is a viem-style Account object, not
- * a plain address string — confirmed by reading genlayer-js's own source
- * (its internal `_encodeAddTransactionData` does `senderAccount.address`,
- * which is `undefined` on a raw string and produces the cryptic viem error
- * `Address "undefined" is invalid.`). This mirrors viem's own
- * `JsonRpcAccount` shape, the one it uses for injected/browser-wallet
- * accounts (as opposed to a `LocalAccount` holding its own private key).
- */
-export function toJsonRpcAccount(address: Address) {
-  return { address, type: "json-rpc" as const };
-}
-
-/**
  * Write client bound to the connected wallet's EIP-1193 provider (obtained
  * via Reown AppKit's useAppKitProvider, which works for both injected
  * wallets like MetaMask and WalletConnect-relayed wallets like Rainbow /
@@ -45,12 +32,25 @@ export function toJsonRpcAccount(address: Address) {
  * frontend/backend never holds or uses a private key. Read-side RPC calls
  * (nonce, gas price, receipts) still go through our backend proxy above,
  * only the actual transaction signing/sending uses the wallet's provider.
+ *
+ * `account` is passed as a PLAIN STRING here, not a wrapped object — this
+ * matters more than it looks. genlayer-js's internal transport keeps a
+ * flag (`isAddress = typeof config.account !== "object"`) that decides
+ * whether wallet-signing methods like eth_sendTransaction get routed to
+ * the injected wallet provider at all; wrapping the account in an object
+ * flips that flag and silently routes signing calls to the plain RPC
+ * endpoint instead (which can't sign anything, producing "Method not
+ * found: eth_sendTransaction"). Internally, genlayer-js/viem still
+ * normalizes this string into a proper `{ address, type: 'json-rpc' }`
+ * account object wherever one is actually needed (e.g. building calldata)
+ * — passing a bare string here is the form the SDK expects, confirmed
+ * against a working sibling GenLayer dApp's wallet integration.
  */
 export function getWriteClient(provider: unknown, address: Address) {
   return createClient({
     chain: studionet,
     endpoint: RPC_ENDPOINT,
-    account: toJsonRpcAccount(address),
+    account: address,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- genlayer-js expects an EIP-1193 provider; AppKit's provider type isn't re-exported cleanly
     provider: provider as any,
   });
