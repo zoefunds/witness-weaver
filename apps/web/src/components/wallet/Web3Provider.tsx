@@ -29,7 +29,23 @@ function ensureAppKit() {
       "--w3m-accent": "#4f46e5",
       "--w3m-border-radius-master": "2px",
     },
-    features: { analytics: false, email: false, socials: false },
+    // AppKit's account button fetches portfolio/balance/swap-quote/activity
+    // data from Reown's own remote data API for these features by default.
+    // That API doesn't know about GenLayer's custom StudioNet chain (id
+    // 61999), so those requests never resolve — which is what shows up as
+    // the account button's spinner never stopping. None of these features
+    // are used by WitnessWeave, so they're switched off rather than left to
+    // hang.
+    features: {
+      analytics: false,
+      email: false,
+      socials: false,
+      history: false,
+      send: false,
+      receive: false,
+      swaps: false,
+      onramp: false,
+    },
   });
 }
 

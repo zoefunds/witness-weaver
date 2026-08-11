@@ -10,6 +10,7 @@ declare global {
       "appkit-button": React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
         label?: string;
         size?: string;
+        balance?: "show" | "hide";
       };
     }
   }
@@ -33,7 +34,13 @@ export function WalletConnectButton() {
           {status === "signing" ? "Check wallet…" : "Sign in"}
         </Button>
       )}
-      <appkit-button label={isConnected ? undefined : "Connect Wallet"} size="md" />
+      {/*
+        balance="hide": the account button otherwise tries to fetch and
+        display a GEN balance for the connected address, which spins
+        forever — GenLayer StudioNet (chain 61999) isn't a chain Reown's
+        balance service knows about, so that fetch never resolves.
+      */}
+      <appkit-button label={isConnected ? undefined : "Connect Wallet"} size="md" balance="hide" />
     </div>
   );
 }
