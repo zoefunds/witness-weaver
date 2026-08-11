@@ -11,3 +11,5 @@ build/
 coverage/
 .fly/
 apps/api/db/data/
+__pycache__/
+*.pyc
