@@ -5,6 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { LinkButton } from "@/components/ui/Button";
 import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
+import { EvaluationPanel } from "@/components/bounty/EvaluationPanel";
 import { formatGen, shortHash, timeAgo } from "@/lib/format";
 import type { Bounty, Evaluation, Testimony } from "@/lib/api";
 
@@ -120,22 +121,12 @@ function BountyDetail({
             </section>
           )}
 
-          {evaluation && (
-            <section className="bg-surface-elevated border border-border-subtle rounded-lg p-6">
-              <h3 className="font-mono text-xs text-primary uppercase tracking-widest mb-4 border-b border-border-subtle pb-2">
-                Evaluation Status
-              </h3>
-              <div className="flex items-center justify-between mb-2">
-                <StatusChip status={evaluation.status} pulse={["pending", "submitted"].includes(evaluation.status)} />
-                {evaluation.verdict && <StatusChip status={evaluation.verdict} />}
-              </div>
-              {evaluation.rationale && <p className="text-sm text-text-secondary mt-3">{evaluation.rationale}</p>}
-              {evaluation.status === "confirmed" && evaluation.verdict && (
-                <LinkButton href={`/bounties/${bounty.id}/truth-record`} variant="secondary" className="mt-4 w-full">
-                  View Truth Record
-                </LinkButton>
-              )}
-            </section>
+          <EvaluationPanel bounty={bounty} evaluation={evaluation} />
+
+          {bounty.status === "resolved" && (
+            <LinkButton href={`/bounties/${bounty.id}/truth-record`} variant="secondary" className="w-full">
+              View Truth Record
+            </LinkButton>
           )}
         </div>
 

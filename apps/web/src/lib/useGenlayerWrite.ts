@@ -12,6 +12,14 @@ interface WriteOptions {
   args: unknown[];
   /** GEN value to send with a payable write, in wei (as a string/bigint). */
   value?: bigint;
+  /**
+   * Override the receipt-polling window. evaluate_bounty in particular runs
+   * a genuine nondeterministic round (web fetches, an LLM call, and
+   * multi-validator consensus) — the default ~70s window is tuned for
+   * simple state writes and isn't enough headroom for that.
+   */
+  pollIntervalMs?: number;
+  pollRetries?: number;
 }
 
 interface WriteResult {
@@ -121,8 +129,8 @@ export function useGenlayerWrite() {
             client.waitForTransactionReceipt({
               hash,
               status: TransactionStatus.ACCEPTED,
-              interval: 7000,
-              retries: 10,
+              interval: opts.pollIntervalMs ?? 7000,
+              retries: opts.pollRetries ?? 10,
             }),
           () => {
             setState("rate_limited");

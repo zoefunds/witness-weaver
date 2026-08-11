@@ -39,6 +39,7 @@ export const api = {
 export interface Bounty {
   id: string;
   chain_bounty_id: string | null;
+  creator_id: string;
   title: string;
   description: string;
   incident_type: string;

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import { config } from "./lib/config.js";
 import { attachAuthContext } from "./plugins/auth-plugin.js";
 import { healthRoutes } from "./routes/health.js";
@@ -12,6 +13,8 @@ import { truthRecordRoutes } from "./routes/truth-records.js";
 import { reputationRoutes } from "./routes/reputation.js";
 import { txStatusRoutes } from "./routes/tx-status.js";
 import { rpcProxyRoutes } from "./routes/rpc-proxy.js";
+import { evaluationSyncRoutes } from "./routes/evaluation-sync.js";
+import { startHeartbeatLoop } from "./lib/heartbeat.js";
 
 async function buildServer() {
   const app = Fastify({
@@ -34,6 +37,16 @@ async function buildServer() {
     methods: ["GET", "POST", "PATCH", "DELETE"],
   });
   await app.register(cookie);
+  // Baseline abuse/spam protection: a per-IP ceiling on request volume.
+  // Deliberately generous — this is a backstop against runaway scripts and
+  // basic spam, not fine-grained per-endpoint policy (bounty/testimony
+  // creation still relies on wallet-signature auth as the real Sybil
+  // resistance, since a rate limit alone doesn't stop a determined attacker
+  // rotating wallets).
+  await app.register(rateLimit, {
+    max: 120,
+    timeWindow: "1 minute",
+  });
   // Called directly (not via app.register) so the session decorator/hook
   // apply to the whole app, not just an isolated plugin context — see
   // attachAuthContext's own comment for why that distinction matters.
@@ -48,6 +61,7 @@ async function buildServer() {
   await app.register(reputationRoutes);
   await app.register(txStatusRoutes);
   await app.register(rpcProxyRoutes);
+  await app.register(evaluationSyncRoutes);
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     app.log.error(err);
@@ -73,6 +87,7 @@ async function main() {
 
   try {
     await app.listen({ port: config.port, host: "0.0.0.0" });
+    startHeartbeatLoop(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

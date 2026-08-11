@@ -108,10 +108,9 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
         // contract's `evidence_urls_json: str` parameter. The first arg is
         // the contract's own bounty id, NOT our database UUID.
         args: [bounty.chain_bounty_id, hashOnChain, JSON.stringify(evidence.map((e) => e.url)), isAnonymous],
-        // TODO: bounties with a required witness bond need this set to
-        // that exact amount (gl.message.value must equal
-        // bounty.witness_bond_wei) — not yet wired up on this form.
-        value: 0n,
+        // The contract requires gl.message.value to match bounty.witness_bond_wei
+        // exactly (or be exactly 0 if no bond is required) — never a caller-chosen amount.
+        value: BigInt(bounty.witness_bond_wei),
       });
 
       if (result) {
@@ -149,6 +148,13 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           <div className="mb-6 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg p-4 text-sm">
             This bounty&apos;s escrow hasn&apos;t confirmed on-chain yet — testimony can&apos;t be anchored to
             the contract until it has.
+          </div>
+        )}
+
+        {bounty !== "loading" && bounty !== "unreachable" && bounty.witness_bond_wei !== "0" && (
+          <div className="mb-6 bg-primary-container/10 border border-primary-container/30 text-primary rounded-lg p-4 text-sm">
+            This bounty requires a witness bond of {(Number(bounty.witness_bond_wei) / 1e18).toLocaleString()} GEN,
+            locked when you submit and refundable once the bounty resolves.
           </div>
         )}
 

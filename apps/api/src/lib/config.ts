@@ -20,6 +20,14 @@ export const config = {
   genlayer: {
     rpcUrl: process.env.GENLAYER_RPC_URL ?? "",
     contractAddress: process.env.GENLAYER_CONTRACT_ADDRESS ?? "",
+    // A dedicated, backend-owned wallet used ONLY to call the contract's
+    // permissionless heartbeat() — GenVM contract code has no trusted
+    // timestamp, so the contract's submission-window/evaluation-timeout
+    // logic runs on a virtual epoch counter that only advances when
+    // someone calls heartbeat(). This wallet needs a small GEN balance on
+    // StudioNet to cover gas; it never touches bounty funds.
+    heartbeatPrivateKey: process.env.HEARTBEAT_PRIVATE_KEY ?? "",
+    heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? 120_000),
   },
   storage: {
     endpoint: process.env.STORAGE_ENDPOINT ?? "",
