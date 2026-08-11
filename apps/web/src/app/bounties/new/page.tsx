@@ -39,6 +39,8 @@ export default function CreateBountyPage() {
     evidenceRequirements: "",
     rewardGen: "",
     witnessBondGen: "0",
+    submissionWindowEpochs: "20",
+    evaluationTimeoutEpochs: "40",
   });
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -63,6 +65,20 @@ export default function CreateBountyPage() {
       if (rewardWei <= 0n) throw new Error();
     } catch {
       setFormError("Reward must be a positive GEN amount.");
+      return;
+    }
+
+    // Bounds must match the contract's own require() checks in
+    // create_bounty exactly — a value the UI accepts but the contract
+    // rejects would waste the user's gas on a guaranteed rollback.
+    const submissionWindow = Number(form.submissionWindowEpochs);
+    const evaluationTimeout = Number(form.evaluationTimeoutEpochs);
+    if (!Number.isInteger(submissionWindow) || submissionWindow < 1 || submissionWindow > 2000) {
+      setFormError("Submission window must be a whole number of epochs between 1 and 2000.");
+      return;
+    }
+    if (!Number.isInteger(evaluationTimeout) || evaluationTimeout < 1 || evaluationTimeout > 4000) {
+      setFormError("Evaluation timeout must be a whole number of epochs between 1 and 4000.");
       return;
     }
 
@@ -102,8 +118,8 @@ export default function CreateBountyPage() {
           // accepts a bigint directly for an int-typed parameter without
           // the JS Number precision loss a wei-scale value would suffer.
           parseEther(form.witnessBondGen || "0"),
-          20, // submission_window_epochs — the contract's virtual-epoch clock, not wall-clock time
-          40, // evaluation_timeout_epochs
+          submissionWindow,
+          evaluationTimeout,
         ],
         value: rewardWei,
       });
@@ -212,6 +228,40 @@ export default function CreateBountyPage() {
               />
             </Field>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Submission Window (epochs)">
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max="2000"
+                step="1"
+                value={form.submissionWindowEpochs}
+                onChange={(e) => set("submissionWindowEpochs", e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Evaluation Timeout (epochs, after window closes)">
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max="4000"
+                step="1"
+                value={form.evaluationTimeoutEpochs}
+                onChange={(e) => set("evaluationTimeoutEpochs", e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          <p className="text-text-secondary text-xs -mt-2">
+            The contract has no real-time clock — it uses its own internal &quot;epoch&quot; counter instead,
+            which advances roughly every couple of minutes. The submission window is how long witnesses have
+            to testify before anyone (not just you) can trigger evaluation; the timeout after that is how
+            long before you can reclaim the reward if evaluation never happens. As the creator, you can
+            always start evaluation early yourself, regardless of these settings.
+          </p>
 
           {formError && <p className="text-error text-sm">{formError}</p>}
           <TxLifecycle state={state} txHash={txHash} errorMessage={errorMessage} />

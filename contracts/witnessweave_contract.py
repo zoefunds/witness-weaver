@@ -337,14 +337,26 @@ def _run_evaluation(bounty_context: dict, snapshot: list) -> dict:
         '"overall_confidence_bps": <int>, "accepted_narrative": "...", "rationale": "..."}'
     )
 
+    def _run_prompt(images):
+        return gl.nondet.exec_prompt(prompt, response_format="json", images=images)
+
     try:
-        raw = gl.nondet.exec_prompt(
-            prompt,
-            response_format="json",
-            images=collected_images if collected_images else None,
-        )
+        raw = _run_prompt(collected_images if collected_images else None)
     except Exception as exc:
-        raise gl.vm.UserError(f"{ERROR_LLM} exec_prompt failed: {exc}")
+        # A bad image (wrong content-type detection, a redirect page mistaken
+        # for image bytes, a format/size the vision model rejects) must not
+        # take down the whole evaluation — that would let one malformed
+        # evidence link block a bounty from ever resolving. Retry once,
+        # text-only, before treating this as a genuine [LLM_ERROR]. If there
+        # were no images in the first place, there's nothing to fall back
+        # from, so it's a real LLM failure immediately.
+        if collected_images:
+            try:
+                raw = _run_prompt(None)
+            except Exception as exc2:
+                raise gl.vm.UserError(f"{ERROR_LLM} exec_prompt failed even without images: {exc2}")
+        else:
+            raise gl.vm.UserError(f"{ERROR_LLM} exec_prompt failed: {exc}")
 
     parsed = raw if isinstance(raw, dict) else _parse_json_object(str(raw))
     if parsed is None:
