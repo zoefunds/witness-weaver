@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { keccak256, toBytes } from "viem";
 import { TopNav } from "@/components/layout/TopNav";
@@ -8,7 +8,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/Button";
 import { TxLifecycle } from "@/components/tx/TxLifecycle";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
-import { api, ApiError, type Testimony } from "@/lib/api";
+import { api, ApiError, type Bounty, type Testimony } from "@/lib/api";
 import { isContractConfigured } from "@/lib/genlayer-client";
 
 interface EvidenceEntry {
@@ -21,6 +21,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
   const router = useRouter();
   const { write, state, txHash, errorMessage } = useGenlayerWrite();
 
+  const [bounty, setBounty] = useState<Bounty | "loading" | "unreachable">("loading");
   const [statement, setStatement] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [evidence, setEvidence] = useState<EvidenceEntry[]>([]);
@@ -28,6 +29,13 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
   const [newEvidenceKind, setNewEvidenceKind] = useState<EvidenceEntry["kind"]>("url");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .get<{ bounty: Bounty }>(`/bounties/${bountyId}`)
+      .then((d) => setBounty(d.bounty))
+      .catch(() => setBounty("unreachable"));
+  }, [bountyId]);
 
   function addEvidence() {
     if (!newEvidenceUrl) return;
@@ -48,6 +56,22 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
 
     if (statement.trim().length < 20) {
       setFormError("Statement must be at least 20 characters.");
+      return;
+    }
+
+    if (bounty === "loading" || bounty === "unreachable") {
+      setFormError("Bounty details are still loading — try again in a moment.");
+      return;
+    }
+    // The contract's own sequential id ("bounty:0", "bounty:1", ...) is what
+    // submit_testimony needs — it has nothing to do with our internal
+    // database UUID (the `bountyId` route param), which the contract has
+    // never heard of. This is only ever set once the bounty's escrow
+    // transaction has actually confirmed on-chain (chain-sync writes it).
+    if (!bounty.chain_bounty_id) {
+      setFormError(
+        "This bounty's escrow hasn't been confirmed on-chain yet, so the contract doesn't have a record of it. Ask the creator to fund it first.",
+      );
       return;
     }
 
@@ -72,8 +96,9 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
         // evidence URLs are passed as a JSON-encoded string, not a native
         // array — GenVM's calldata schema only supports primitive
         // parameter types (str/int/bool) on public methods, matching the
-        // contract's `evidence_urls_json: str` parameter.
-        args: [bountyId, hashOnChain, JSON.stringify(evidence.map((e) => e.url)), isAnonymous],
+        // contract's `evidence_urls_json: str` parameter. The first arg is
+        // the contract's own bounty id, NOT our database UUID.
+        args: [bounty.chain_bounty_id, hashOnChain, JSON.stringify(evidence.map((e) => e.url)), isAnonymous],
         // TODO: bounties with a required witness bond need this set to
         // that exact amount (gl.message.value must equal
         // bounty.witness_bond_wei) — not yet wired up on this form.
@@ -82,8 +107,11 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
 
       if (result) {
         await api.patch(`/testimonies/${testimony.id}/chain-sync`, { submitTxHash: result.txHash });
+        router.push(`/bounties/${bountyId}`);
       }
-      router.push(`/bounties/${bountyId}`);
+      // If the on-chain submission failed/was rejected, stay on the page —
+      // the off-chain testimony draft is saved, but we don't want to
+      // navigate away and hide the failure the way create-bounty used to.
     } catch (err) {
       setFormError(err instanceof ApiError ? `Couldn't submit testimony (${err.status}).` : "Something went wrong.");
     } finally {
@@ -105,6 +133,13 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           <div className="mb-6 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg p-4 text-sm">
             The Intelligent Contract isn&apos;t deployed yet — your testimony will be saved, but on-chain
             anchoring isn&apos;t live until deployment completes.
+          </div>
+        )}
+
+        {bounty !== "loading" && bounty !== "unreachable" && !bounty.chain_bounty_id && (
+          <div className="mb-6 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg p-4 text-sm">
+            This bounty&apos;s escrow hasn&apos;t confirmed on-chain yet — testimony can&apos;t be anchored to
+            the contract until it has.
           </div>
         )}
 
