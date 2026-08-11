@@ -23,9 +23,13 @@ const INCIDENT_TYPES = [
 
 export default function CreateBountyPage() {
   const router = useRouter();
-  const { write, state, txHash, errorMessage } = useGenlayerWrite();
+  const { write, state, txHash, errorMessage, reset } = useGenlayerWrite();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Once the off-chain draft is created, we hold onto it so a failed/rejected
+  // escrow transaction can be retried without creating a second duplicate
+  // bounty row — retry only re-runs the wallet transaction, not the form.
+  const [draftBounty, setDraftBounty] = useState<Bounty | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -42,6 +46,10 @@ export default function CreateBountyPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    await submitOrRetry();
+  }
+
+  async function submitOrRetry() {
     setFormError(null);
 
     if (!form.title || !form.description || !form.rewardGen) {
@@ -61,16 +69,23 @@ export default function CreateBountyPage() {
     setSubmitting(true);
     try {
       // 1. Create the off-chain draft row first so we have an id to attach
-      //    the on-chain tx hash to as soon as the wallet signs.
-      const { bounty } = await api.post<{ bounty: Bounty }>("/bounties", {
-        title: form.title,
-        description: form.description,
-        incidentType: form.incidentType,
-        locationContext: form.locationContext || undefined,
-        evidenceRequirements: form.evidenceRequirements || undefined,
-        rewardWei: rewardWei.toString(),
-        witnessBondWei: parseEther(form.witnessBondGen || "0").toString(),
-      });
+      //    the on-chain tx hash to as soon as the wallet signs. Only done
+      //    once — if the user retries after a failed escrow tx, we reuse
+      //    this same draft instead of creating a duplicate.
+      const bounty =
+        draftBounty ??
+        (
+          await api.post<{ bounty: Bounty }>("/bounties", {
+            title: form.title,
+            description: form.description,
+            incidentType: form.incidentType,
+            locationContext: form.locationContext || undefined,
+            evidenceRequirements: form.evidenceRequirements || undefined,
+            rewardWei: rewardWei.toString(),
+            witnessBondWei: parseEther(form.witnessBondGen || "0").toString(),
+          })
+        ).bounty;
+      setDraftBounty(bounty);
 
       // 2. Send the wallet-signed create_bounty transaction, escrowing the
       //    reward as gl.message.value on the contract.
@@ -100,12 +115,12 @@ export default function CreateBountyPage() {
           rewardDepositedWei: rewardWei.toString(),
         });
         router.push(`/bounties/${bounty.id}`);
-      } else {
-        // Draft exists but escrow tx failed/rejected — leave it as a draft
-        // the user can retry funding from the bounty page rather than
-        // silently losing the description they just wrote.
-        router.push(`/bounties/${bounty.id}`);
       }
+      // If the escrow transaction failed or was rejected, `result` is null
+      // and `write()` has already set `state`/`errorMessage` — we deliberately
+      // do NOT navigate away here, so that failure stays visible and the
+      // "Retry Escrow Transaction" button below can re-attempt funding this
+      // same draft.
     } catch (err) {
       setFormError(err instanceof ApiError ? `Couldn't save bounty (${err.status}).` : "Something went wrong.");
     } finally {
@@ -201,9 +216,29 @@ export default function CreateBountyPage() {
           {formError && <p className="text-error text-sm">{formError}</p>}
           <TxLifecycle state={state} txHash={txHash} errorMessage={errorMessage} />
 
-          <Button type="submit" disabled={submitting} className="mt-2">
-            {submitting ? "Submitting…" : "Create Bounty & Escrow Reward"}
-          </Button>
+          {draftBounty && ["rejected", "failed", "timeout"].includes(state) ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-text-secondary text-sm">
+                Your bounty details were saved, but the escrow transaction didn&apos;t go through. Nothing was
+                lost — retry funding it, or come back to this later from{" "}
+                <span className="text-primary">the bounty page</span> (status: draft, unfunded).
+              </p>
+              <Button
+                type="button"
+                onClick={() => {
+                  reset();
+                  submitOrRetry();
+                }}
+                disabled={submitting}
+              >
+                {submitting ? "Retrying…" : "Retry Escrow Transaction"}
+              </Button>
+            </div>
+          ) : (
+            <Button type="submit" disabled={submitting} className="mt-2">
+              {submitting ? "Submitting…" : "Create Bounty & Escrow Reward"}
+            </Button>
+          )}
         </form>
       </main>
       <Footer />

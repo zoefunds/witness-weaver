@@ -4,6 +4,7 @@ import { SideNav } from "@/components/layout/SideNav";
 import { Footer } from "@/components/layout/Footer";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { LinkButton } from "@/components/ui/Button";
+import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
 import { formatGen, shortHash, timeAgo } from "@/lib/format";
 import type { Bounty, Evaluation, Testimony } from "@/lib/api";
 
@@ -71,6 +72,10 @@ function BountyDetail({
           <span className="text-xl font-semibold text-secondary">{formatGen(bounty.reward_wei)}</span>
         </div>
       </header>
+
+      <div className="mb-6">
+        <FundEscrowButton bounty={bounty} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 flex flex-col gap-6">
