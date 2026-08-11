@@ -11,6 +11,7 @@ import { evaluationRoutes } from "./routes/evaluations.js";
 import { truthRecordRoutes } from "./routes/truth-records.js";
 import { reputationRoutes } from "./routes/reputation.js";
 import { txStatusRoutes } from "./routes/tx-status.js";
+import { rpcProxyRoutes } from "./routes/rpc-proxy.js";
 
 async function buildServer() {
   const app = Fastify({
@@ -39,6 +40,7 @@ async function buildServer() {
   await app.register(truthRecordRoutes);
   await app.register(reputationRoutes);
   await app.register(txStatusRoutes);
+  await app.register(rpcProxyRoutes);
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     app.log.error(err);
