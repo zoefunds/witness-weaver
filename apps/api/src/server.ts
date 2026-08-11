@@ -25,6 +25,13 @@ async function buildServer() {
   await app.register(cors, {
     origin: config.corsOrigins,
     credentials: true,
+    // @fastify/cors defaults `methods` to just "GET,HEAD,POST" — every
+    // PATCH route in this API (chain-sync for bounties/testimonies/
+    // evaluations) was being silently blocked by the browser's CORS
+    // preflight as a result, so a confirmed on-chain transaction never
+    // made it back into the database. DELETE isn't used anywhere yet but
+    // is included for forward-compatibility with routes.
+    methods: ["GET", "POST", "PATCH", "DELETE"],
   });
   await app.register(cookie);
   // Called directly (not via app.register) so the session decorator/hook
