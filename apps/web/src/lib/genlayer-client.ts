@@ -14,6 +14,19 @@ export function getReadClient() {
 }
 
 /**
+ * The account genlayer-js expects here is a viem-style Account object, not
+ * a plain address string — confirmed by reading genlayer-js's own source
+ * (its internal `_encodeAddTransactionData` does `senderAccount.address`,
+ * which is `undefined` on a raw string and produces the cryptic viem error
+ * `Address "undefined" is invalid.`). This mirrors viem's own
+ * `JsonRpcAccount` shape, the one it uses for injected/browser-wallet
+ * accounts (as opposed to a `LocalAccount` holding its own private key).
+ */
+export function toJsonRpcAccount(address: Address) {
+  return { address, type: "json-rpc" as const };
+}
+
+/**
  * Write client bound to the connected wallet's EIP-1193 provider (obtained
  * via Reown AppKit's useAppKitProvider, which works for both injected
  * wallets like MetaMask and WalletConnect-relayed wallets like Rainbow /
@@ -21,10 +34,10 @@ export function getReadClient() {
  * evaluate_bounty, settle, ...) is signed by the user's own wallet — the
  * frontend/backend never holds or uses a private key.
  */
-export function getWriteClient(provider: unknown, account: Address) {
+export function getWriteClient(provider: unknown, address: Address) {
   return createClient({
     chain: studionet,
-    account,
+    account: toJsonRpcAccount(address),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- genlayer-js expects an EIP-1193 provider; AppKit's provider type isn't re-exported cleanly
     provider: provider as any,
   });
