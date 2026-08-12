@@ -48,6 +48,25 @@ export function useAuth() {
     refresh();
   }, [refresh]);
 
+  // Switching wallets in the extension doesn't invalidate our session —
+  // the backend token in localStorage stays tied to whichever wallet
+  // signed in last, not whichever one happens to be connected right now.
+  // Left unchecked, that means every off-chain API call (including
+  // POST /testimonies) is authenticated as the OLD wallet even though the
+  // on-chain transaction is correctly signed by the NEW one — which
+  // previously surfaced as a confusing "already submitted" 409 when
+  // switching wallets to submit a second, genuinely different testimony.
+  // Force a clean sign-out the moment the connected address no longer
+  // matches the signed-in session, so a fresh sign-in (and a real
+  // wallet-address match) is required before doing anything else.
+  useEffect(() => {
+    if (user && address && user.wallet_address.toLowerCase() !== address.toLowerCase()) {
+      clearAuthToken();
+      setUser(null);
+      setStatus("idle");
+    }
+  }, [address, user]);
+
   const signIn = useCallback(async () => {
     if (!address) return;
     setStatus("signing");
