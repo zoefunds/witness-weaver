@@ -237,12 +237,16 @@ function BountyDetail({
             )}
           </div>
 
-          {/* `sticky` only stays put while its own column is taller than the
-              viewport — once the shorter sidebar column ends scrolling, this
-              detaches from the bottom and appears to drift. `fixed` pins it
-              to the viewport itself, independent of either column's height. */}
+          {/* Both `sticky` and `fixed` caused problems here: `sticky` only
+              tracks its own (shorter) column, so it detached and drifted
+              once the taller sidebar column finished scrolling; `fixed`
+              takes it out of the grid entirely, so at narrower widths it
+              floats over the sidebar column instead of the ledger it
+              belongs to. Rendering it as a normal block at the end of the
+              ledger column avoids both — it just sits in flow like every
+              other card here. */}
           {canSubmitTestimony && (
-            <div className="mt-6 fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-[420px] z-20 bg-surface-elevated/95 backdrop-blur-md border border-border-subtle rounded-lg p-4 flex items-center justify-between shadow-lg">
+            <div className="mt-6 bg-surface-elevated/95 border border-border-subtle rounded-lg p-4 flex items-center justify-between">
               <div>
                 <span className="block text-sm text-on-surface mb-1">Have relevant evidence?</span>
                 <span className="block font-mono text-[10px] text-text-secondary">
@@ -254,7 +258,7 @@ function BountyDetail({
           )}
 
           {!isStale && !canSubmitTestimony && deadlinePassed && (bounty.status === "open" || bounty.status === "evaluating") && (
-            <div className="mt-6 fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-[420px] z-20 bg-tertiary/10 backdrop-blur-md border border-tertiary/30 rounded-lg p-4 text-sm text-tertiary shadow-lg">
+            <div className="mt-6 bg-tertiary/10 border border-tertiary/30 rounded-lg p-4 text-sm text-tertiary">
               The submission deadline has passed — testimony can no longer be added. Evaluation will start
               automatically shortly, or the creator can start it immediately.
             </div>
