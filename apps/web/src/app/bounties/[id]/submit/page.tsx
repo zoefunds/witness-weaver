@@ -77,7 +77,15 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       // our API secret to the browser, only a signature valid for this one
       // upload (see apps/api/src/routes/uploads.ts).
       const res = await fetch(presign.uploadUrl, { method: "POST", body });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        // Cloudinary returns a JSON body describing exactly what's wrong
+        // (invalid signature, unconfigured account, etc.) — surfacing it
+        // instead of a generic message is the difference between a user
+        // stuck guessing and one who can tell us (or us diagnosing) the
+        // real cause immediately.
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error?.message ?? `Upload failed (${res.status})`);
+      }
       const uploaded = (await res.json()) as { secure_url: string; resource_type: string };
 
       const kind: EvidenceEntry["kind"] =
@@ -87,7 +95,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       setFormError(
         err instanceof ApiError && err.status === 503
           ? "File upload isn't configured yet — paste an evidence URL below instead."
-          : "File upload failed. You can still add evidence by pasting a URL below.",
+          : `File upload failed: ${err instanceof Error ? err.message : "unknown error"}. You can still add evidence by pasting a URL below.`,
       );
     } finally {
       setUploading(false);

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { TopNav } from "@/components/layout/TopNav";
 import { Footer } from "@/components/layout/Footer";
 import { StatusChip } from "@/components/ui/StatusChip";
+import { LocalDateTime } from "@/components/ui/LocalDateTime";
 import { formatBps, shortHash } from "@/lib/format";
 import type { TruthRecord } from "@/lib/api";
 
@@ -117,7 +118,7 @@ function TruthRecordView({ record }: { record: TruthRecord }) {
                 <ProvenanceField label="Settlement Transaction">{shortHash(record.settle_tx_hash)}</ProvenanceField>
               )}
               <ProvenanceField label="Published">
-                {new Date(record.published_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                <LocalDateTime iso={record.published_at} />
               </ProvenanceField>
               {record.payout_bps !== null && (
                 <ProvenanceField label="Payout Split">{formatBps(record.payout_bps)} to builder</ProvenanceField>

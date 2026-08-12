@@ -3,6 +3,7 @@ import { TopNav } from "@/components/layout/TopNav";
 import { SideNav } from "@/components/layout/SideNav";
 import { Footer } from "@/components/layout/Footer";
 import { StatusChip } from "@/components/ui/StatusChip";
+import { LocalDateTime } from "@/components/ui/LocalDateTime";
 import { LinkButton } from "@/components/ui/Button";
 import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
 import { EvaluationPanel } from "@/components/bounty/EvaluationPanel";
@@ -135,10 +136,7 @@ function BountyDetail({
                   <tr className="border-b border-border-subtle/50">
                     <td className="py-2 text-text-secondary">Incident Date</td>
                     <td className="py-2 text-on-surface text-right">
-                      {new Date(bounty.incident_occurred_at).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      <LocalDateTime iso={bounty.incident_occurred_at} />
                     </td>
                   </tr>
                 )}
@@ -156,10 +154,7 @@ function BountyDetail({
                   <tr className="border-t border-border-subtle/50">
                     <td className="py-2 text-text-secondary">Submission Deadline</td>
                     <td className={`py-2 text-right ${deadlinePassed ? "text-error" : "text-on-surface"}`}>
-                      {new Date(chainBounty.submission_deadline_ts * 1000).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      <LocalDateTime epochSeconds={chainBounty.submission_deadline_ts} />
                       {deadlinePassed && " (closed)"}
                     </td>
                   </tr>
