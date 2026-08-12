@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { TxLifecycle } from "@/components/tx/TxLifecycle";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
 import { api, ApiError, type Bounty } from "@/lib/api";
-import { isContractConfigured } from "@/lib/genlayer-client";
+import { isContractConfigured, resolveChainBountyId } from "@/lib/genlayer-client";
+import { useAccount } from "wagmi";
 
 const INCIDENT_TYPES = [
   "Delivery dispute",
@@ -24,6 +25,7 @@ const INCIDENT_TYPES = [
 export default function CreateBountyPage() {
   const router = useRouter();
   const { write, state, txHash, errorMessage, reset } = useGenlayerWrite();
+  const { address } = useAccount();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // Once the off-chain draft is created, we hold onto it so a failed/rejected
@@ -125,11 +127,22 @@ export default function CreateBountyPage() {
       });
 
       if (result) {
+        // create_bounty's own return value (the contract's sequential
+        // bounty id) isn't reliably reachable from the transaction receipt
+        // shape, so it's resolved with a follow-up read instead — see
+        // resolveChainBountyId's own comment for why.
+        const chainBountyId = address ? await resolveChainBountyId(address, form.title) : null;
         await api.patch(`/bounties/${bounty.id}/chain-sync`, {
           createTxHash: result.txHash,
           status: "open",
           rewardDepositedWei: rewardWei.toString(),
+          chainBountyId: chainBountyId ?? undefined,
         });
+        if (!chainBountyId) {
+          setFormError(
+            "Escrow confirmed, but we couldn't automatically detect the contract's bounty id — refresh the bounty page in a moment; it should sync shortly.",
+          );
+        }
         router.push(`/bounties/${bounty.id}`);
       }
       // If the escrow transaction failed or was rejected, `result` is null

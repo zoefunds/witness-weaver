@@ -231,7 +231,16 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
             </label>
             <div className="flex gap-2">
               <select
-                className="input w-32"
+                className="input"
+                // The shared `.input { width: 100% }` rule (defined below,
+                // in this page's own <style> tag) and Tailwind's `w-32`
+                // utility have equal CSS specificity — since this page's
+                // <style> block is injected later in the document, its
+                // width:100% was silently winning over w-32, collapsing
+                // the select to fill the flex row and squeezing the URL
+                // input next to nothing. An inline style always wins
+                // regardless of source order, so it's set here instead.
+                style={{ width: "8rem", flexShrink: 0 }}
                 value={newEvidenceKind}
                 onChange={(e) => setNewEvidenceKind(e.target.value as EvidenceEntry["kind"])}
               >
@@ -242,6 +251,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
               </select>
               <input
                 className="input flex-1"
+                style={{ minWidth: 0 }}
                 placeholder="https://..."
                 value={newEvidenceUrl}
                 onChange={(e) => setNewEvidenceUrl(e.target.value)}

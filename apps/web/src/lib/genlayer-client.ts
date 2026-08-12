@@ -55,3 +55,44 @@ export function getWriteClient(provider: unknown, address: Address) {
     provider: provider as any,
   });
 }
+
+interface ChainBounty {
+  bounty_id: string;
+  creator: string;
+  title: string;
+}
+
+/**
+ * create_bounty returns the contract's own sequential bounty id as its
+ * function return value, but pulling that out of a GenVM transaction
+ * receipt means parsing consensus/leader-receipt internals that aren't a
+ * stable public shape (and vary by SDK version). Since ids are assigned as
+ * a simple incrementing "bounty:{n}" sequence, the newly created bounty is
+ * reliably the most recent one whose creator + title match what was just
+ * submitted — scanning back a few entries from the current total handles
+ * the (rare, testing-scale) case where another creation lands in between.
+ */
+async function readJsonView<T>(client: ReturnType<typeof createClient>, functionName: string, args: unknown[]): Promise<T> {
+  // GenVM view methods return JSON-encoded strings, not parsed objects —
+  // the SDK doesn't decode this automatically.
+  const raw = await client.readContract({
+    address: CONTRACT_ADDRESS,
+    functionName,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    args: args as any,
+  });
+  return typeof raw === "string" ? (JSON.parse(raw) as T) : (raw as T);
+}
+
+export async function resolveChainBountyId(creatorAddress: Address, title: string): Promise<string | null> {
+  const client = getReadClient();
+  const info = await readJsonView<{ total_bounties: number }>(client, "get_contract_info", []);
+  const total = info.total_bounties;
+  for (let i = total - 1; i >= Math.max(0, total - 5); i--) {
+    const bounty = await readJsonView<ChainBounty>(client, "get_bounty", [`bounty:${i}`]);
+    if (bounty.creator?.toLowerCase() === creatorAddress.toLowerCase() && bounty.title === title) {
+      return bounty.bounty_id;
+    }
+  }
+  return null;
+}

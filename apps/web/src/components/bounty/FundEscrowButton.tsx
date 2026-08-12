@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/Button";
 import { TxLifecycle } from "@/components/tx/TxLifecycle";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
 import { useAuth } from "@/lib/useAuth";
+import { resolveChainBountyId } from "@/lib/genlayer-client";
 import { api } from "@/lib/api";
 import type { Bounty } from "@/lib/api";
 
@@ -19,6 +21,7 @@ import type { Bounty } from "@/lib/api";
 export function FundEscrowButton({ bounty }: { bounty: Bounty }) {
   const router = useRouter();
   const { user } = useAuth();
+  const { address } = useAccount();
   const { write, state, txHash, errorMessage } = useGenlayerWrite();
 
   if (bounty.status !== "draft" && bounty.status !== "pending_escrow") return null;
@@ -41,10 +44,12 @@ export function FundEscrowButton({ bounty }: { bounty: Bounty }) {
     });
 
     if (result) {
+      const chainBountyId = address ? await resolveChainBountyId(address, bounty.title) : null;
       await api.patch(`/bounties/${bounty.id}/chain-sync`, {
         createTxHash: result.txHash,
         status: "open",
         rewardDepositedWei: rewardWei.toString(),
+        chainBountyId: chainBountyId ?? undefined,
       });
       router.refresh();
     }
