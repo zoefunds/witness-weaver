@@ -17,6 +17,11 @@ export const config = {
     .map((o) => o.trim())
     .filter(Boolean),
   sessionJwtSecret: required("SESSION_JWT_SECRET", "dev-only-insecure-secret-change-me"),
+  // Optional. When set, rate limiting is shared across all Fly.io machines
+  // via Redis instead of each machine tracking its own in-memory count —
+  // without this, running N machines silently multiplies the real ceiling
+  // by N, since @fastify/rate-limit defaults to per-process state.
+  redisUrl: process.env.REDIS_URL ?? "",
   genlayer: {
     rpcUrl: process.env.GENLAYER_RPC_URL ?? "",
     contractAddress: process.env.GENLAYER_CONTRACT_ADDRESS ?? "",
@@ -29,11 +34,9 @@ export const config = {
     heartbeatPrivateKey: process.env.HEARTBEAT_PRIVATE_KEY ?? "",
     heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? 120_000),
   },
-  storage: {
-    endpoint: process.env.STORAGE_ENDPOINT ?? "",
-    bucket: process.env.STORAGE_BUCKET ?? "witnessweave-evidence",
-    accessKeyId: process.env.STORAGE_ACCESS_KEY_ID ?? "",
-    secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY ?? "",
-    publicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL ?? "",
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "",
+    apiKey: process.env.CLOUDINARY_API_KEY ?? "",
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? "",
   },
 };

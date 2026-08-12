@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../lib/db.js";
+import { config } from "../lib/config.js";
 
 const CreateBountySchema = z.object({
   title: z.string().min(5).max(200),
@@ -71,16 +72,22 @@ export async function bountyRoutes(app: FastifyInstance) {
     if (owned[0].creator_id !== req.session.userId) return reply.code(403).send({ error: "not_owner" });
 
     const s = parsed.data;
+    // Recorded once, at the point escrow actually confirms — this is what
+    // lets the UI later detect a bounty whose on-chain data lives on a
+    // contract address the app no longer points at (e.g. after a redeploy),
+    // rather than silently failing reads/writes against the wrong contract.
+    const contractAddress = s.chainBountyId ? config.genlayer.contractAddress : null;
     const { rows } = await pool.query(
       `update bounties set
          chain_bounty_id = coalesce($2, chain_bounty_id),
          create_tx_hash = coalesce($3, create_tx_hash),
          status = coalesce($4, status),
          reward_deposited_wei = coalesce($5, reward_deposited_wei),
+         contract_address = coalesce($6, contract_address),
          updated_at = now()
        where id = $1
        returning *`,
-      [(req.params as { id: string }).id, s.chainBountyId, s.createTxHash, s.status, s.rewardDepositedWei],
+      [(req.params as { id: string }).id, s.chainBountyId, s.createTxHash, s.status, s.rewardDepositedWei, contractAddress],
     );
     return reply.send({ bounty: rows[0] });
   });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/Logo";
 import { WalletConnectButton } from "@/components/wallet/WalletConnectButton";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 const NAV_LINKS = [
   { href: "/discover", label: "Discover" },
@@ -29,7 +30,8 @@ export function TopNav({ active }: { active?: string }) {
           ))}
         </nav>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <NotificationBell />
         <WalletConnectButton />
       </div>
     </header>

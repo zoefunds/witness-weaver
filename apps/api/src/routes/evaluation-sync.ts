@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "../lib/db.js";
 import { readContractView } from "../lib/genlayer.js";
 import { config } from "../lib/config.js";
+import { notify } from "../lib/notify.js";
 
 interface ChainBounty {
   bounty_id: string;
@@ -167,6 +168,22 @@ export async function evaluationSyncRoutes(app: FastifyInstance) {
            values ($1, $2, $3)`,
           [id, evaluationId, config.genlayer.contractAddress],
         );
+
+        // Notify everyone who has a stake in the outcome — the creator and
+        // every witness who testified — exactly once, guarded by the same
+        // "truth record doesn't exist yet" check above.
+        const notifyPayload = {
+          bountyId: id,
+          bountyTitle: bounty.title,
+          verdict: chainBounty.verdict,
+        };
+        const recipientIds = new Set<string>([bounty.creator_id]);
+        for (const t of (await pool.query("select submitter_id from testimonies where bounty_id = $1", [id])).rows) {
+          recipientIds.add(t.submitter_id);
+        }
+        for (const userId of recipientIds) {
+          await notify(userId, "bounty_resolved", notifyPayload);
+        }
       }
     }
 

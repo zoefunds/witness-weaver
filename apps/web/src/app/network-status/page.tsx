@@ -29,7 +29,11 @@ export default async function NetworkStatusPage() {
           <StatusRow
             label="Intelligent Contract"
             ok={contractReady}
-            detail={contractReady ? "Deployed on StudioNet" : "Not yet deployed"}
+            detail={
+              contractReady
+                ? `${process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS?.slice(0, 10)}...`
+                : "Not yet deployed"
+            }
           />
         </div>
       </main>

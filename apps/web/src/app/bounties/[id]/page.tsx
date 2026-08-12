@@ -6,6 +6,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { LinkButton } from "@/components/ui/Button";
 import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
 import { EvaluationPanel } from "@/components/bounty/EvaluationPanel";
+import { ClaimTimeoutRefundButton } from "@/components/bounty/ClaimTimeoutRefundButton";
 import { formatGen, shortHash, timeAgo } from "@/lib/format";
 import type { Bounty, Evaluation, Testimony } from "@/lib/api";
 
@@ -54,6 +55,10 @@ function BountyDetail({
   data: { bounty: Bounty; testimonies: Testimony[]; evaluation: Evaluation | null };
 }) {
   const { bounty, testimonies, evaluation } = data;
+  const isStale =
+    !!bounty.contract_address &&
+    !!process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS &&
+    bounty.contract_address.toLowerCase() !== process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS.toLowerCase();
 
   return (
     <>
@@ -74,9 +79,19 @@ function BountyDetail({
         </div>
       </header>
 
-      <div className="mb-6">
-        <FundEscrowButton bounty={bounty} />
-      </div>
+      {isStale && (
+        <div className="mb-6 bg-error-container/20 border border-error/30 text-error rounded-lg p-4 text-sm">
+          This bounty&apos;s escrow lives on a previous Intelligent Contract deployment (
+          <code className="font-mono text-xs">{bounty.contract_address}</code>), not the one currently live.
+          Its on-chain state can no longer be read or acted on through this app.
+        </div>
+      )}
+
+      {!isStale && (
+        <div className="mb-6">
+          <FundEscrowButton bounty={bounty} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 flex flex-col gap-6">
@@ -121,7 +136,12 @@ function BountyDetail({
             </section>
           )}
 
-          <EvaluationPanel bounty={bounty} evaluation={evaluation} />
+          {!isStale && (
+            <>
+              <EvaluationPanel bounty={bounty} evaluation={evaluation} />
+              <ClaimTimeoutRefundButton bounty={bounty} />
+            </>
+          )}
 
           {bounty.status === "resolved" && (
             <LinkButton href={`/bounties/${bounty.id}/truth-record`} variant="secondary" className="w-full">
@@ -176,7 +196,7 @@ function BountyDetail({
             )}
           </div>
 
-          {(bounty.status === "open" || bounty.status === "evaluating") && (
+          {!isStale && (bounty.status === "open" || bounty.status === "evaluating") && (
             <div className="mt-auto bg-surface-elevated/90 backdrop-blur-md border border-border-subtle rounded-lg p-4 flex items-center justify-between sticky bottom-4">
               <div>
                 <span className="block text-sm text-on-surface mb-1">Have relevant evidence?</span>

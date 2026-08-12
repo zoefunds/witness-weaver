@@ -28,6 +28,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
   const [newEvidenceUrl, setNewEvidenceUrl] = useState("");
   const [newEvidenceKind, setNewEvidenceKind] = useState<EvidenceEntry["kind"]>("url");
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // Same reasoning as the create-bounty form: once the off-chain draft is
   // created, a retry after a failed/rejected on-chain call reuses it
@@ -40,6 +41,45 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       .then((d) => setBounty(d.bounty))
       .catch(() => setBounty("unreachable"));
   }, [bountyId]);
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setUploading(true);
+    setFormError(null);
+    try {
+      const presign = await api.post<{ uploadUrl: string; apiKey: string; timestamp: number; signature: string; folder: string }>(
+        "/uploads/presign",
+      );
+      const body = new FormData();
+      body.append("file", file);
+      body.append("api_key", presign.apiKey);
+      body.append("timestamp", String(presign.timestamp));
+      body.append("signature", presign.signature);
+      body.append("folder", presign.folder);
+
+      // Uploads directly to Cloudinary, not through our API — never sends
+      // our API secret to the browser, only a signature valid for this one
+      // upload (see apps/api/src/routes/uploads.ts).
+      const res = await fetch(presign.uploadUrl, { method: "POST", body });
+      if (!res.ok) throw new Error("Upload failed");
+      const uploaded = (await res.json()) as { secure_url: string; resource_type: string };
+
+      const kind: EvidenceEntry["kind"] =
+        uploaded.resource_type === "video" ? "video" : uploaded.resource_type === "image" ? "image" : "document";
+      setEvidence((list) => [...list, { kind, url: uploaded.secure_url }]);
+    } catch (err) {
+      setFormError(
+        err instanceof ApiError && err.status === 503
+          ? "File upload isn't configured yet — paste an evidence URL below instead."
+          : "File upload failed. You can still add evidence by pasting a URL below.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function addEvidence() {
     if (!newEvidenceUrl) return;
@@ -179,9 +219,16 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           </label>
 
           <div className="flex flex-col gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">
-              Evidence (URLs)
-            </span>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">Evidence</span>
+            <label className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center justify-center gap-2 rounded font-mono text-xs tracking-wide px-4 py-2 bg-transparent border border-border-subtle text-text-primary hover:bg-surface-elevated transition-colors cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}
+              >
+                {uploading ? "Uploading…" : "Upload a file"}
+              </span>
+              <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+              <span className="text-text-secondary text-xs">or paste a URL below</span>
+            </label>
             <div className="flex gap-2">
               <select
                 className="input w-32"

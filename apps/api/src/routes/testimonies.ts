@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { pool } from "../lib/db.js";
+import { notify } from "../lib/notify.js";
 
 const EvidenceRefSchema = z.object({
   kind: z.enum(["image", "document", "video", "url"]),
@@ -34,10 +35,26 @@ export async function testimonyRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_payload", details: parsed.error.flatten() });
     const t = parsed.data;
 
-    const { rows: bountyRows } = await pool.query("select status from bounties where id = $1", [t.bountyId]);
+    const { rows: bountyRows } = await pool.query(
+      "select status, creator_id, title from bounties where id = $1",
+      [t.bountyId],
+    );
     if (!bountyRows[0]) return reply.code(404).send({ error: "bounty_not_found" });
-    if (!["open", "evaluating"].includes(bountyRows[0].status)) {
+    const bounty = bountyRows[0];
+    if (!["open", "evaluating"].includes(bounty.status)) {
       return reply.code(409).send({ error: "bounty_not_accepting_testimony" });
+    }
+
+    // Baseline Sybil friction: one testimony per wallet per bounty. This
+    // doesn't stop someone rotating wallets, but it does stop the trivial
+    // case of one account spamming a bounty with many "independent"
+    // accounts to skew corroboration.
+    const { rows: existing } = await pool.query(
+      "select id from testimonies where bounty_id = $1 and submitter_id = $2",
+      [t.bountyId, req.session.userId],
+    );
+    if (existing[0]) {
+      return reply.code(409).send({ error: "already_submitted", testimonyId: existing[0].id });
     }
 
     // The full statement text stays off-chain (privacy + gas cost); only its
@@ -75,9 +92,24 @@ export async function testimonyRoutes(app: FastifyInstance) {
         );
       }
       await client.query("COMMIT");
+
+      if (bounty.creator_id !== req.session.userId) {
+        await notify(bounty.creator_id, "testimony_submitted", {
+          bountyId: t.bountyId,
+          bountyTitle: bounty.title,
+          testimonyId: testimony.id,
+        });
+      }
+
       return reply.code(201).send({ testimony, statementHash });
     } catch (err) {
       await client.query("ROLLBACK");
+      // Belt-and-suspenders: the pre-check above has a race window under
+      // concurrent requests from the same user, closed by the DB's own
+      // unique constraint (23505 = unique_violation).
+      if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+        return reply.code(409).send({ error: "already_submitted" });
+      }
       throw err;
     } finally {
       client.release();

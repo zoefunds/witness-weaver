@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
+import { Redis } from "ioredis";
 import { config } from "./lib/config.js";
 import { attachAuthContext } from "./plugins/auth-plugin.js";
 import { healthRoutes } from "./routes/health.js";
@@ -14,6 +15,8 @@ import { reputationRoutes } from "./routes/reputation.js";
 import { txStatusRoutes } from "./routes/tx-status.js";
 import { rpcProxyRoutes } from "./routes/rpc-proxy.js";
 import { evaluationSyncRoutes } from "./routes/evaluation-sync.js";
+import { uploadRoutes } from "./routes/uploads.js";
+import { notificationRoutes } from "./routes/notifications.js";
 import { startHeartbeatLoop } from "./lib/heartbeat.js";
 
 async function buildServer() {
@@ -43,9 +46,16 @@ async function buildServer() {
   // creation still relies on wallet-signature auth as the real Sybil
   // resistance, since a rate limit alone doesn't stop a determined attacker
   // rotating wallets).
+  //
+  // Backed by Redis when configured: @fastify/rate-limit's default store is
+  // per-process in-memory, which under this API's 2-machine Fly.io setup
+  // would silently double the real ceiling (each machine tracks its own
+  // count) — Redis makes the limit actually global across machines. Falls
+  // back to in-memory if REDIS_URL isn't set, so this remains optional.
   await app.register(rateLimit, {
     max: 120,
     timeWindow: "1 minute",
+    redis: config.redisUrl ? new Redis(config.redisUrl) : undefined,
   });
   // Called directly (not via app.register) so the session decorator/hook
   // apply to the whole app, not just an isolated plugin context — see
@@ -62,6 +72,8 @@ async function buildServer() {
   await app.register(txStatusRoutes);
   await app.register(rpcProxyRoutes);
   await app.register(evaluationSyncRoutes);
+  await app.register(uploadRoutes);
+  await app.register(notificationRoutes);
 
   app.setErrorHandler((err: Error & { statusCode?: number }, _req, reply) => {
     app.log.error(err);

@@ -25,7 +25,7 @@
 
 ## Known gaps (not yet built)
 
-- **No file upload / evidence storage provider wired** — `STORAGE_*` env vars are documented but unconfigured; evidence is URL-only today.
+- **Evidence file uploads** now go through Cloudinary via a signed-upload flow (`POST /uploads/presign` — the API secret never reaches the browser, only a short-lived signature). URL-only evidence remains supported as a fallback.
 - **No Sybil resistance beyond wallet cost** — nothing stops one person from submitting multiple "independent" testimonies from different wallets. Reputation decay over time is the only friction currently in place.
 - **No content moderation** on testimony statement text or bounty descriptions.
 - **Basic per-IP rate limiting only** (`@fastify/rate-limit`, 120 req/min) — a backstop against runaway scripts, not fine-grained per-endpoint abuse policy.

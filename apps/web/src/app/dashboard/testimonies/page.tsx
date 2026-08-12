@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { TopNav } from "@/components/layout/TopNav";
 import { SideNav } from "@/components/layout/SideNav";
 import { Footer } from "@/components/layout/Footer";
 import { StatusChip } from "@/components/ui/StatusChip";
+import { ClaimBondRefundButton } from "@/components/bounty/ClaimBondRefundButton";
 import { useAuth } from "@/lib/useAuth";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
@@ -16,19 +17,26 @@ interface MyTestimony {
   statement: string;
   status: string;
   created_at: string;
+  chain_testimony_id: string | null;
+  bond_deposited_wei: string;
+  bond_claimed: boolean;
 }
 
 export default function MyTestimoniesPage() {
   const { user } = useAuth();
   const [testimonies, setTestimonies] = useState<MyTestimony[] | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!user) return;
     api
       .get<{ testimonies: MyTestimony[] }>(`/users/${user.id}/testimonies`)
       .then((d) => setTestimonies(d.testimonies))
       .catch(() => setTestimonies([]));
   }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <>
@@ -58,17 +66,19 @@ export default function MyTestimoniesPage() {
           {testimonies && testimonies.length > 0 && (
             <div className="flex flex-col gap-3">
               {testimonies.map((t) => (
-                <Link
+                <div
                   key={t.id}
-                  href={`/bounties/${t.bounty_id}`}
                   className="flex items-center justify-between gap-4 bg-surface-elevated border border-border-subtle rounded-lg p-4 hover:border-outline transition-colors"
                 >
-                  <p className="text-sm text-on-surface-variant truncate flex-1">{t.statement}</p>
+                  <Link href={`/bounties/${t.bounty_id}`} className="text-sm text-on-surface-variant truncate flex-1">
+                    {t.statement}
+                  </Link>
                   <div className="flex items-center gap-3 shrink-0">
+                    <ClaimBondRefundButton testimony={t} onClaimed={load} />
                     <StatusChip status={t.status} />
                     <span className="font-mono text-[10px] text-text-secondary">{timeAgo(t.created_at)}</span>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           )}

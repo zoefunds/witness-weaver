@@ -155,18 +155,66 @@ which is also the contract's `owner` address from deployment — confirmed
 and proceeded with per the user's instruction, now funded and running as
 the heartbeat wallet.
 
+## Second contract redeploy + backlog cleanup (2026-08-12)
+
+- **Contract fix**: `evaluate_bounty` rolled back entirely on a single bad
+  image evidence link (`[LLM_ERROR] exec_prompt failed: INVALID_IMAGE`,
+  observed live against a `picsum.photos` fetch) — contradicted the
+  contract's own stated design principle that one bad link shouldn't block
+  resolution. Fixed with a text-only retry fallback before treating it as a
+  genuine LLM failure. Redeployed at
+  `0x87284Ed4E8617B05fBbfe5B7313a91Ac0e7b7047` — **a fresh instance, not an
+  upgrade**; bounties created against the prior address
+  (`0xC474415Dd9Fb8B307eDB8384c1F897555C919BbB`) are now permanently
+  orphaned relative to whichever address the app points at. Added
+  `bounties.contract_address` (set once at chain-sync) so the UI can detect
+  and flag this instead of silently failing reads/writes against the wrong
+  contract.
+- **Create-bounty deadline fields**: `submission_window_epochs`/
+  `evaluation_timeout_epochs` were hardcoded (20/40) with no way to change
+  them — now exposed as form fields with the same bounds the contract
+  enforces.
+- **Evidence storage**: switched from the originally planned Cloudflare
+  R2/S3 to **Cloudinary** (user's choice, R2 activation issues) —
+  signed-upload flow (`POST /uploads/presign`), API secret never reaches
+  the browser.
+- **Sybil baseline**: one testimony per (bounty, submitter), enforced at
+  the DB level (`testimonies_unique_bounty_submitter`), not just app-level
+  — closes the race window a pre-insert check alone would leave.
+- **`claim_timeout_refund`/`claim_bond_refund` UI**: previously contract-only,
+  no frontend action — now on the bounty page and My Testimonies
+  respectively. Both let the contract itself reject with the real error if
+  called too early, rather than the UI trying to predict on-chain epoch
+  timing.
+- **Notifications**: wired end-to-end (testimony-submitted → creator,
+  bounty-resolved → creator + every witness), plus a bell dropdown in
+  `TopNav`, polling every 30s (not a websocket — informational, not
+  latency-sensitive).
+- **Redis-backed rate limiting**: `@fastify/rate-limit`'s default store is
+  per-process — with 2 Fly.io machines that silently doubled the real
+  ceiling. Now backed by Upstash Redis (`REDIS_URL`) when configured, so
+  the limit is actually global across machines. Falls back to in-memory if
+  unset.
+- **Tests**: added DB-integration tests (`apps/api/test/db-integration.test.ts`)
+  that run against a real Postgres — every test wraps its inserts in a
+  transaction that's always rolled back, so it's safe to run against
+  production directly (and was, to prove it works: 7/7 passing against the
+  live DB via the Fly proxy tunnel). Added component tests
+  (`apps/web/src/components/__tests__/`) using `@testing-library/react` +
+  `happy-dom` patched onto Node's test runner (no vitest/jest needed).
+
 ## Open / pending
 
-- **Evidence file storage** — no R2/S3 provider wired up; evidence is
-  URL-only today (`STORAGE_*` env vars are documented but unconfigured).
-  Needs the user to provision a bucket and provide credentials — not
-  something to fabricate.
 - **Custom domain** — still on shared `*.vercel.app`, which triggered a
   MetaMask/Blockaid "malicious site" false positive earlier. Needs the
   user to purchase a domain (not an action to take autonomously).
-- **No Sybil resistance beyond wallet-signature cost** — nothing stops one
-  person submitting "independent" testimony from multiple wallets.
+- **No Sybil resistance beyond wallet-signature cost + one-testimony-per-bounty**
+  — nothing stops rotating wallets entirely.
 - **No content moderation** on testimony/bounty text, no malicious-URL
   scanning on evidence links. See `docs/security.md` for the full list.
 - **No CI pipeline** — tests exist (`docs/testing.md`) but nothing runs
   them automatically on push yet.
+- **Orphaned pre-redeploy bounty** (`b1e2baf3-...`, DB row still present)
+  points at the old contract address; its escrowed GEN is unreachable
+  through this app now. Flagged in the UI via the stale-contract banner,
+  not yet cleaned up in the DB.
