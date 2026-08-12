@@ -25,11 +25,17 @@ export function EvaluationPanel({ bounty, evaluation }: { bounty: Bounty; evalua
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  const hasVerdict = evaluation?.verdict !== null && evaluation?.verdict !== undefined;
+
   if (!bounty.chain_bounty_id) return null;
-  if (!["open", "evaluating"].includes(bounty.status)) return null;
+  // Once resolved, there's nothing left for this panel to *drive* — but the
+  // verdict itself must stay visible; it's the only place on this page that
+  // shows what the validators actually agreed on. Only the action buttons
+  // (Start Evaluation / Settle) are gated to the in-progress statuses.
+  if (!["open", "evaluating"].includes(bounty.status) && !hasVerdict) return null;
 
   const isCreator = user?.id === bounty.creator_id;
-  const hasVerdict = evaluation?.verdict !== null && evaluation?.verdict !== undefined;
+  const canDriveActions = ["open", "evaluating"].includes(bounty.status);
 
   async function syncFromChain() {
     setSyncing(true);
@@ -110,7 +116,7 @@ export function EvaluationPanel({ bounty, evaluation }: { bounty: Bounty; evalua
           </div>
           {evaluation.rationale && <p className="text-sm text-text-secondary">{evaluation.rationale}</p>}
 
-          {evaluation.verdict === "needs_human_review" ? (
+          {!canDriveActions ? null : evaluation.verdict === "needs_human_review" ? (
             <p className="text-tertiary text-sm">
               The contract couldn&apos;t reach a confident verdict. It can&apos;t settle until re-evaluated with
               more evidence, or until the timeout is reached and the creator reclaims the reward.

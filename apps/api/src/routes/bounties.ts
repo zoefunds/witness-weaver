@@ -120,6 +120,29 @@ export async function bountyRoutes(app: FastifyInstance) {
       pool.query("select * from evaluations where bounty_id = $1 order by created_at desc limit 1", [id]),
     ]);
 
-    return reply.send({ bounty: rows[0], testimonies, evaluation: evaluation[0] ?? null });
+    // Evidence is never joined into the testimonies query above, so the
+    // frontend's testimony cards always rendered with an empty evidence
+    // list even when files/links had genuinely been submitted — fetch and
+    // attach them here the same way the frontend's Evidence type expects
+    // ({ id, kind, url }).
+    const testimonyIds = testimonies.map((t) => t.id);
+    const { rows: evidenceRows } = testimonyIds.length
+      ? await pool.query(
+          "select id, testimony_id, kind, url from evidence_files where testimony_id = any($1::uuid[])",
+          [testimonyIds],
+        )
+      : { rows: [] };
+    const evidenceByTestimony = new Map<string, { id: string; kind: string; url: string }[]>();
+    for (const e of evidenceRows) {
+      const list = evidenceByTestimony.get(e.testimony_id) ?? [];
+      list.push({ id: e.id, kind: e.kind, url: e.url });
+      evidenceByTestimony.set(e.testimony_id, list);
+    }
+    const testimoniesWithEvidence = testimonies.map((t) => ({
+      ...t,
+      evidence: evidenceByTestimony.get(t.id) ?? [],
+    }));
+
+    return reply.send({ bounty: rows[0], testimonies: testimoniesWithEvidence, evaluation: evaluation[0] ?? null });
   });
 }
