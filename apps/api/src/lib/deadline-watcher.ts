@@ -66,17 +66,38 @@ export function startDeadlineWatcher(logger: FastifyBaseLogger): void {
 
   async function tick() {
     const nowSeconds = Math.floor(Date.now() / 1000);
+    // Ethereum addresses are case-insensitive (the mixed-case form is just
+    // an EIP-55 checksum encoding) — comparing raw strings here silently
+    // matched zero rows whenever the stored checksummed address and the
+    // configured contract address differed only in casing, which looks
+    // identical to "nothing to do" from the logs (no error, no bounties).
     const { rows: bounties } = await pool.query(
       `select id, chain_bounty_id from bounties
        where status in ('open', 'evaluating')
          and chain_bounty_id is not null
-         and contract_address = $1`,
+         and lower(contract_address) = lower($1)`,
       [config.genlayer.contractAddress],
     );
+    logger.info({ candidateCount: bounties.length }, "deadline-watcher: tick");
 
     for (const bounty of bounties) {
       try {
         const chain = await readContractView<ChainBounty>("get_bounty", [bounty.chain_bounty_id]);
+
+        // The write branches below (evaluate_bounty/settle/claim_timeout_refund)
+        // are the only places that call syncBountyEvaluation, so a bounty
+        // that already reached a terminal on-chain state (RESOLVED,
+        // CANCELLED, TIMED_OUT) in an earlier tick — whose sync happened to
+        // fail, e.g. the missing reward_claimed column bug — would never be
+        // retried: it doesn't match any of the OPEN/EVALUATED conditions
+        // below, so the loop silently does nothing for it forever. Sync
+        // directly whenever the DB status has drifted from a chain state
+        // that no further on-chain write can change.
+        if (["RESOLVED", "CANCELLED", "TIMED_OUT"].includes(chain.status)) {
+          await syncBountyEvaluation(bounty.id);
+          logger.info({ bountyId: bounty.id, chainStatus: chain.status }, "deadline-watcher: synced terminal bounty");
+          continue;
+        }
 
         if (chain.status === "OPEN" && chain.testimony_count > 0 && nowSeconds > chain.submission_deadline_ts) {
           await callAndSync("evaluate_bounty", bounty.chain_bounty_id, bounty.id);

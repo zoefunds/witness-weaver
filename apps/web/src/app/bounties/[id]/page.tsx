@@ -217,12 +217,16 @@ function BountyDetail({
                   {t.evidence && t.evidence.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
                       {t.evidence.map((e) => (
-                        <span
+                        <a
                           key={e.id}
-                          className="font-mono text-[10px] text-text-secondary flex items-center gap-1 bg-background-deep px-2 py-1 rounded border border-border-subtle"
+                          href={e.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-[10px] text-primary hover:underline flex items-center gap-1 bg-background-deep px-2 py-1 rounded border border-border-subtle max-w-[220px]"
                         >
-                          {e.kind}
-                        </span>
+                          <span className="uppercase text-text-secondary shrink-0">{e.kind}</span>
+                          <span className="truncate min-w-0">{e.url}</span>
+                        </a>
                       ))}
                     </div>
                   )}
