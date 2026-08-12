@@ -20,7 +20,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // in production, where the cookie is cross-site and unreliable.
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      // Fastify's default JSON body parser rejects an empty body outright
+      // (FST_ERR_CTP_EMPTY_JSON_BODY) whenever Content-Type: application/json
+      // is present — which every no-body POST here used to send
+      // unconditionally, so every call with no payload (upload presign,
+      // auth logout, and critically the client-side sync-evaluation call
+      // fired right after a wallet-signed evaluate/settle tx confirms) was
+      // silently 400ing. Only set it when there's an actual body to parse.
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
