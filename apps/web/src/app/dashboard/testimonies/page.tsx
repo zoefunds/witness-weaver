@@ -43,7 +43,13 @@ export default function MyTestimoniesPage() {
       <TopNav active="/dashboard/testimonies" />
       <div className="flex flex-1 w-full max-w-[1280px] mx-auto">
         <SideNav />
-        <main className="flex-1 p-4 md:p-12">
+        {/* This is the actual root cause of the page-wide overflow: `main`
+            is itself a flex item of the SideNav | main row, and flex-1
+            items default to min-width:auto — refusing to shrink below their
+            content's natural width. A wide testimony row inside pushed
+            `main` itself wider than the viewport, which no amount of
+            truncate/min-w-0 on elements *inside* main could ever fix. */}
+        <main className="flex-1 min-w-0 p-4 md:p-12">
           <header className="mb-8 border-b border-border-subtle pb-6">
             <h1 className="text-3xl font-semibold text-text-primary mb-2">My Testimonies</h1>
             <p className="text-text-secondary">Testimony you've submitted across all bounties.</p>
@@ -68,7 +74,16 @@ export default function MyTestimoniesPage() {
               {testimonies.map((t) => (
                 <div
                   key={t.id}
-                  className="flex items-center justify-between gap-4 bg-surface-elevated border border-border-subtle rounded-lg p-4 hover:border-outline transition-colors"
+                  // This row is itself a flex item of the flex-col list
+                  // above it — the same min-width:auto default that forced
+                  // min-w-0 on the Link below applies here too, one level
+                  // up. Without it, the row's own content (a long statement
+                  // fighting the button group for space) can push the row
+                  // wider than its container instead of ever handing width
+                  // back to the Link for truncate to act on. overflow-hidden
+                  // is a hard backstop so nothing here can ever visually
+                  // exceed the card's bounds regardless.
+                  className="flex items-center justify-between gap-4 min-w-0 overflow-hidden bg-surface-elevated border border-border-subtle rounded-lg p-4 hover:border-outline transition-colors"
                 >
                   <Link
                     href={`/bounties/${t.bounty_id}`}

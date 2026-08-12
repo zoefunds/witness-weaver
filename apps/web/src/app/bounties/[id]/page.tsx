@@ -59,7 +59,7 @@ export default async function BountyDetailPage({ params }: { params: Promise<{ i
       <TopNav />
       <div className="flex flex-1 w-full max-w-[1280px] mx-auto">
         <SideNav />
-        <main className="flex-1 p-4 md:p-12">
+        <main className="flex-1 min-w-0 p-4 md:p-12">
           {data === "unreachable" ? (
             <div className="bg-error-container/20 border border-error/30 text-error rounded-lg p-4 text-sm">
               Couldn&apos;t reach the WitnessWeave API to load this bounty.

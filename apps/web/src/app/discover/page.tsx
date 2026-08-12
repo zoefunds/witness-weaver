@@ -26,7 +26,7 @@ export default async function DiscoverPage() {
       <TopNav active="/discover" />
       <div className="flex flex-1 w-full max-w-[1280px] mx-auto">
         <SideNav active="/discover" />
-        <main className="flex-1 p-4 md:p-12">
+        <main className="flex-1 min-w-0 p-4 md:p-12">
           <header className="mb-8 border-b border-border-subtle pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-semibold text-text-primary mb-2">Discover Bounties</h1>

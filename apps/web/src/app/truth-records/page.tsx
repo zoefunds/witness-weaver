@@ -35,7 +35,7 @@ export default async function TruthRecordsIndexPage() {
       <TopNav active="/truth-records" />
       <div className="flex flex-1 w-full max-w-[1280px] mx-auto">
         <SideNav active="/truth-records" />
-        <main className="flex-1 p-4 md:p-12">
+        <main className="flex-1 min-w-0 p-4 md:p-12">
           <header className="mb-8 border-b border-border-subtle pb-6">
             <h1 className="text-3xl font-semibold text-text-primary mb-2">Truth Record Archive</h1>
             <p className="text-text-secondary max-w-xl">
