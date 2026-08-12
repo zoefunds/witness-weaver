@@ -70,7 +70,15 @@ export default function MyTestimoniesPage() {
                   key={t.id}
                   className="flex items-center justify-between gap-4 bg-surface-elevated border border-border-subtle rounded-lg p-4 hover:border-outline transition-colors"
                 >
-                  <Link href={`/bounties/${t.bounty_id}`} className="text-sm text-on-surface-variant truncate flex-1">
+                  <Link
+                    href={`/bounties/${t.bounty_id}`}
+                    // flex-1 items default to min-width:auto, which refuses
+                    // to shrink below the text's natural width — truncate's
+                    // overflow:hidden never gets a chance to clip anything
+                    // as a result. min-w-0 overrides that so it actually
+                    // works, instead of pushing the row past the viewport.
+                    className="text-sm text-on-surface-variant truncate flex-1 min-w-0"
+                  >
                     {t.statement}
                   </Link>
                   <div className="flex items-center gap-3 shrink-0">

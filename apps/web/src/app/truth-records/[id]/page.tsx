@@ -116,7 +116,9 @@ function TruthRecordView({ record }: { record: TruthRecord }) {
               {record.settle_tx_hash && (
                 <ProvenanceField label="Settlement Transaction">{shortHash(record.settle_tx_hash)}</ProvenanceField>
               )}
-              <ProvenanceField label="Published">{new Date(record.published_at).toUTCString()}</ProvenanceField>
+              <ProvenanceField label="Published">
+                {new Date(record.published_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+              </ProvenanceField>
               {record.payout_bps !== null && (
                 <ProvenanceField label="Payout Split">{formatBps(record.payout_bps)} to builder</ProvenanceField>
               )}

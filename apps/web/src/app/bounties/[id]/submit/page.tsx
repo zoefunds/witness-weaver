@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { TxLifecycle } from "@/components/tx/TxLifecycle";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
 import { api, ApiError, type Bounty, type Testimony } from "@/lib/api";
-import { isContractConfigured } from "@/lib/genlayer-client";
+import { isContractConfigured, getChainBounty, type ChainBountyFull } from "@/lib/genlayer-client";
 
 interface EvidenceEntry {
   kind: "image" | "document" | "video" | "url";
@@ -34,13 +34,26 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
   // created, a retry after a failed/rejected on-chain call reuses it
   // instead of creating a duplicate testimony row every attempt.
   const [draftTestimony, setDraftTestimony] = useState<Testimony | null>(null);
+  const [chainBounty, setChainBounty] = useState<ChainBountyFull | null>(null);
 
   useEffect(() => {
     api
       .get<{ bounty: Bounty }>(`/bounties/${bountyId}`)
-      .then((d) => setBounty(d.bounty))
+      .then((d) => {
+        setBounty(d.bounty);
+        // The contract, not our Postgres mirror, is the source of truth for
+        // the deadline it will actually enforce — read it directly rather
+        // than trusting a possibly-stale synced value.
+        if (d.bounty.chain_bounty_id) {
+          getChainBounty(d.bounty.chain_bounty_id)
+            .then(setChainBounty)
+            .catch(() => setChainBounty(null));
+        }
+      })
       .catch(() => setBounty("unreachable"));
   }, [bountyId]);
+
+  const deadlinePassed = chainBounty ? Date.now() / 1000 > chainBounty.submission_deadline_ts : false;
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -122,6 +135,14 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       );
       return;
     }
+    // The contract itself is the ultimate enforcer of this (submit_testimony
+    // will reject with "[EXPECTED] Submission window has closed" regardless),
+    // but checking here means the user finds out before signing a wallet
+    // transaction that's guaranteed to roll back.
+    if (deadlinePassed) {
+      setFormError("The submission deadline for this bounty has passed — testimony can no longer be added.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -190,6 +211,17 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           </div>
         )}
 
+        {chainBounty && deadlinePassed && (
+          <div className="mb-6 bg-error-container/20 border border-error/30 text-error rounded-lg p-4 text-sm">
+            The submission deadline for this bounty passed on{" "}
+            {new Date(chainBounty.submission_deadline_ts * 1000).toLocaleString(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}
+            . Testimony can no longer be submitted — evaluation will start automatically.
+          </div>
+        )}
+
         {bounty !== "loading" && bounty !== "unreachable" && !bounty.chain_bounty_id && (
           <div className="mb-6 bg-tertiary/10 border border-tertiary/30 text-tertiary rounded-lg p-4 text-sm">
             This bounty&apos;s escrow hasn&apos;t confirmed on-chain yet — testimony can&apos;t be anchored to
@@ -204,7 +236,11 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form
+          onSubmit={handleSubmit}
+          className={`flex flex-col gap-5 ${deadlinePassed ? "opacity-50 pointer-events-none" : ""}`}
+          aria-disabled={deadlinePassed}
+        >
           <label className="flex flex-col gap-1.5">
             <span className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">
               Your Statement
@@ -273,7 +309,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
                     key={i}
                     className="flex items-center justify-between font-mono text-xs text-text-secondary bg-surface-elevated border border-border-subtle rounded px-3 py-2"
                   >
-                    <span className="truncate">
+                    <span className="truncate flex-1 min-w-0">
                       [{e.kind}] {e.url}
                     </span>
                     <button
@@ -310,7 +346,7 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
               </Button>
             </div>
           ) : (
-            <Button type="submit" disabled={submitting} className="mt-2">
+            <Button type="submit" disabled={submitting || deadlinePassed} className="mt-2">
               {submitting ? "Submitting…" : "Submit Testimony"}
             </Button>
           )}

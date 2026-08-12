@@ -8,6 +8,7 @@ import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
 import { EvaluationPanel } from "@/components/bounty/EvaluationPanel";
 import { ClaimTimeoutRefundButton } from "@/components/bounty/ClaimTimeoutRefundButton";
 import { formatGen, shortHash, timeAgo } from "@/lib/format";
+import { getChainBounty, type ChainBountyFull } from "@/lib/genlayer-client";
 import type { Bounty, Evaluation, Testimony } from "@/lib/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
@@ -23,11 +24,34 @@ async function getBounty(id: string) {
   }
 }
 
+/**
+ * The contract, not our Postgres mirror, is the source of truth for
+ * deadlines — read directly here (this runs server-side, so it can call
+ * getChainBounty freely) rather than trusting whatever was last synced
+ * into the database, which could be stale.
+ */
+async function getDeadlines(chainBountyId: string | null, isStale: boolean): Promise<ChainBountyFull | null> {
+  if (!chainBountyId || isStale) return null;
+  try {
+    return await getChainBounty(chainBountyId);
+  } catch {
+    return null;
+  }
+}
+
 export default async function BountyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await getBounty(id);
 
   if (data === null) notFound();
+
+  const isStale =
+    data !== "unreachable" &&
+    !!data.bounty.contract_address &&
+    !!process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS &&
+    data.bounty.contract_address.toLowerCase() !== process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS.toLowerCase();
+  const chainBounty =
+    data !== "unreachable" ? await getDeadlines(data.bounty.chain_bounty_id, isStale) : null;
 
   return (
     <>
@@ -40,7 +64,7 @@ export default async function BountyDetailPage({ params }: { params: Promise<{ i
               Couldn&apos;t reach the WitnessWeave API to load this bounty.
             </div>
           ) : (
-            <BountyDetail data={data} />
+            <BountyDetail data={data} isStale={isStale} chainBounty={chainBounty} />
           )}
         </main>
       </div>
@@ -51,14 +75,16 @@ export default async function BountyDetailPage({ params }: { params: Promise<{ i
 
 function BountyDetail({
   data,
+  isStale,
+  chainBounty,
 }: {
   data: { bounty: Bounty; testimonies: Testimony[]; evaluation: Evaluation | null };
+  isStale: boolean;
+  chainBounty: ChainBountyFull | null;
 }) {
   const { bounty, testimonies, evaluation } = data;
-  const isStale =
-    !!bounty.contract_address &&
-    !!process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS &&
-    bounty.contract_address.toLowerCase() !== process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS.toLowerCase();
+  const deadlinePassed = chainBounty ? Date.now() / 1000 > chainBounty.submission_deadline_ts : false;
+  const canSubmitTestimony = !isStale && !deadlinePassed && (bounty.status === "open" || bounty.status === "evaluating");
 
   return (
     <>
@@ -109,7 +135,10 @@ function BountyDetail({
                   <tr className="border-b border-border-subtle/50">
                     <td className="py-2 text-text-secondary">Incident Date</td>
                     <td className="py-2 text-on-surface text-right">
-                      {new Date(bounty.incident_occurred_at).toUTCString()}
+                      {new Date(bounty.incident_occurred_at).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
                     </td>
                   </tr>
                 )}
@@ -123,6 +152,18 @@ function BountyDetail({
                   <td className="py-2 text-text-secondary">Witness Bond</td>
                   <td className="py-2 text-primary text-right">{formatGen(bounty.witness_bond_wei)}</td>
                 </tr>
+                {chainBounty && (
+                  <tr className="border-t border-border-subtle/50">
+                    <td className="py-2 text-text-secondary">Submission Deadline</td>
+                    <td className={`py-2 text-right ${deadlinePassed ? "text-error" : "text-on-surface"}`}>
+                      {new Date(chainBounty.submission_deadline_ts * 1000).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                      {deadlinePassed && " (closed)"}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -196,8 +237,12 @@ function BountyDetail({
             )}
           </div>
 
-          {!isStale && (bounty.status === "open" || bounty.status === "evaluating") && (
-            <div className="mt-auto bg-surface-elevated/90 backdrop-blur-md border border-border-subtle rounded-lg p-4 flex items-center justify-between sticky bottom-4">
+          {/* `sticky` only stays put while its own column is taller than the
+              viewport — once the shorter sidebar column ends scrolling, this
+              detaches from the bottom and appears to drift. `fixed` pins it
+              to the viewport itself, independent of either column's height. */}
+          {canSubmitTestimony && (
+            <div className="mt-6 fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-[420px] z-20 bg-surface-elevated/95 backdrop-blur-md border border-border-subtle rounded-lg p-4 flex items-center justify-between shadow-lg">
               <div>
                 <span className="block text-sm text-on-surface mb-1">Have relevant evidence?</span>
                 <span className="block font-mono text-[10px] text-text-secondary">
@@ -205,6 +250,13 @@ function BountyDetail({
                 </span>
               </div>
               <LinkButton href={`/bounties/${bounty.id}/submit`}>Submit Testimony</LinkButton>
+            </div>
+          )}
+
+          {!isStale && !canSubmitTestimony && deadlinePassed && (bounty.status === "open" || bounty.status === "evaluating") && (
+            <div className="mt-6 fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-[420px] z-20 bg-tertiary/10 backdrop-blur-md border border-tertiary/30 rounded-lg p-4 text-sm text-tertiary shadow-lg">
+              The submission deadline has passed — testimony can no longer be added. Evaluation will start
+              automatically shortly, or the creator can start it immediately.
             </div>
           )}
         </div>

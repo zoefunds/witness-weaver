@@ -96,3 +96,22 @@ export async function resolveChainBountyId(creatorAddress: Address, title: strin
   }
   return null;
 }
+
+export interface ChainBountyFull {
+  bounty_id: string;
+  status: string;
+  testimony_count: number;
+  submission_deadline_ts: number;
+  evaluation_timeout_ts: number;
+  verdict: string;
+}
+
+/**
+ * The contract, not our Postgres mirror, is the source of truth for
+ * deadlines — reading it directly here means the displayed date/time and
+ * the submission cutoff can never drift out of sync with what the
+ * contract will actually enforce.
+ */
+export async function getChainBounty(chainBountyId: string): Promise<ChainBountyFull> {
+  return readJsonView<ChainBountyFull>(getReadClient(), "get_bounty", [chainBountyId]);
+}
