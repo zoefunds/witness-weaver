@@ -17,7 +17,7 @@ import { rpcProxyRoutes } from "./routes/rpc-proxy.js";
 import { evaluationSyncRoutes } from "./routes/evaluation-sync.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { notificationRoutes } from "./routes/notifications.js";
-import { startHeartbeatLoop } from "./lib/heartbeat.js";
+import { startDeadlineWatcher } from "./lib/deadline-watcher.js";
 
 async function buildServer() {
   const app = Fastify({
@@ -99,7 +99,7 @@ async function main() {
 
   try {
     await app.listen({ port: config.port, host: "0.0.0.0" });
-    startHeartbeatLoop(app.log);
+    startDeadlineWatcher(app.log);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

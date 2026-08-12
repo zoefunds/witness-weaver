@@ -37,9 +37,21 @@ export function FundEscrowButton({ bounty }: { bounty: Bounty }) {
     const rewardWei = BigInt(bounty.reward_wei);
     const witnessBondWei = BigInt(bounty.witness_bond_wei);
 
+    // The original deadline picked at creation time isn't stored off-chain
+    // (only the contract has it, and this draft never reached the
+    // contract) — falls back to the same 24h/48h defaults the create-bounty
+    // form starts with, in seconds since deadlines are real wall-clock time
+    // on this contract, not epoch counts.
     const result = await write({
       functionName: "create_bounty",
-      args: [bounty.title, bounty.description, bounty.evidence_requirements ?? "", witnessBondWei, 20, 40],
+      args: [
+        bounty.title,
+        bounty.description,
+        bounty.evidence_requirements ?? "",
+        witnessBondWei,
+        24 * 3600,
+        48 * 3600,
+      ],
       value: rewardWei,
     });
 

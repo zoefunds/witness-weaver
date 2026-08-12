@@ -12,6 +12,14 @@ import { api, ApiError, type Bounty } from "@/lib/api";
 import { isContractConfigured, resolveChainBountyId } from "@/lib/genlayer-client";
 import { useAccount } from "wagmi";
 
+/** "YYYY-MM-DDTHH:mm" in local time, for <input type="datetime-local">'s default value. */
+function defaultDeadlineInput(hoursFromNow: number): string {
+  const d = new Date(Date.now() + hoursFromNow * 3600 * 1000);
+  d.setSeconds(0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const INCIDENT_TYPES = [
   "Delivery dispute",
   "Product damage",
@@ -41,8 +49,10 @@ export default function CreateBountyPage() {
     evidenceRequirements: "",
     rewardGen: "",
     witnessBondGen: "0",
-    submissionWindowEpochs: "20",
-    evaluationTimeoutEpochs: "40",
+    // Defaults to 24h from now, in the browser's local timezone, formatted
+    // for <input type="datetime-local">.
+    submissionDeadline: defaultDeadlineInput(24),
+    evaluationTimeoutHours: "48",
   });
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -70,17 +80,34 @@ export default function CreateBountyPage() {
       return;
     }
 
+    // The contract's deadlines are real wall-clock timestamps (GenVM
+    // patches datetime.now() to a consensus-agreed block time), so the
+    // picked date/time converts directly to "seconds from now" here.
     // Bounds must match the contract's own require() checks in
     // create_bounty exactly — a value the UI accepts but the contract
     // rejects would waste the user's gas on a guaranteed rollback.
-    const submissionWindow = Number(form.submissionWindowEpochs);
-    const evaluationTimeout = Number(form.evaluationTimeoutEpochs);
-    if (!Number.isInteger(submissionWindow) || submissionWindow < 1 || submissionWindow > 2000) {
-      setFormError("Submission window must be a whole number of epochs between 1 and 2000.");
+    const deadlineMs = new Date(form.submissionDeadline).getTime();
+    if (Number.isNaN(deadlineMs)) {
+      setFormError("Pick a valid submission deadline.");
       return;
     }
-    if (!Number.isInteger(evaluationTimeout) || evaluationTimeout < 1 || evaluationTimeout > 4000) {
-      setFormError("Evaluation timeout must be a whole number of epochs between 1 and 4000.");
+    const submissionWindow = Math.round((deadlineMs - Date.now()) / 1000);
+    const MIN_WINDOW = 60;
+    const MAX_WINDOW = 60 * 60 * 24 * 90;
+    if (submissionWindow < MIN_WINDOW || submissionWindow > MAX_WINDOW) {
+      setFormError("Submission deadline must be between 1 minute and 90 days from now.");
+      return;
+    }
+
+    const evaluationTimeoutHours = Number(form.evaluationTimeoutHours);
+    if (!Number.isFinite(evaluationTimeoutHours) || evaluationTimeoutHours <= 0) {
+      setFormError("Evaluation timeout must be a positive number of hours.");
+      return;
+    }
+    const evaluationTimeout = Math.round(evaluationTimeoutHours * 3600);
+    const MAX_TIMEOUT = 60 * 60 * 24 * 180;
+    if (evaluationTimeout > MAX_TIMEOUT) {
+      setFormError("Evaluation timeout can't exceed 180 days after the submission deadline.");
       return;
     }
 
@@ -243,37 +270,34 @@ export default function CreateBountyPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Submission Window (epochs)">
+            <Field label="Submission Deadline">
               <input
                 className="input"
-                type="number"
-                min="1"
-                max="2000"
-                step="1"
-                value={form.submissionWindowEpochs}
-                onChange={(e) => set("submissionWindowEpochs", e.target.value)}
+                type="datetime-local"
+                value={form.submissionDeadline}
+                onChange={(e) => set("submissionDeadline", e.target.value)}
                 required
               />
             </Field>
-            <Field label="Evaluation Timeout (epochs, after window closes)">
+            <Field label="Evaluation Timeout (hours after deadline)">
               <input
                 className="input"
                 type="number"
                 min="1"
-                max="4000"
                 step="1"
-                value={form.evaluationTimeoutEpochs}
-                onChange={(e) => set("evaluationTimeoutEpochs", e.target.value)}
+                value={form.evaluationTimeoutHours}
+                onChange={(e) => set("evaluationTimeoutHours", e.target.value)}
                 required
               />
             </Field>
           </div>
           <p className="text-text-secondary text-xs -mt-2">
-            The contract has no real-time clock — it uses its own internal &quot;epoch&quot; counter instead,
-            which advances roughly every couple of minutes. The submission window is how long witnesses have
-            to testify before anyone (not just you) can trigger evaluation; the timeout after that is how
-            long before you can reclaim the reward if evaluation never happens. As the creator, you can
-            always start evaluation early yourself, regardless of these settings.
+            Witnesses can submit testimony until the deadline; after that, anyone (not just you) can trigger
+            evaluation automatically — our backend also checks periodically and triggers it for you the
+            moment the deadline passes, so nothing needs to sit waiting on a click. The evaluation timeout is
+            your fallback: if evaluation still hasn&apos;t resolved by then, the reward is automatically
+            refunded back to you. As the creator, you can always start evaluation early yourself, regardless
+            of the deadline.
           </p>
 
           {formError && <p className="text-error text-sm">{formError}</p>}

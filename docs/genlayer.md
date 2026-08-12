@@ -49,7 +49,7 @@ write, 5 view).
    ```
    get_contract_info()
    ```
-   should return JSON with your address as `owner`, `current_epoch: 0`,
+   should return JSON with your address as `owner`, `current_time` (a real unix timestamp),
    `total_bounties: 0`.
 6. Copy the deployed **contract address**.
 

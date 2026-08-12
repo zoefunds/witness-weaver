@@ -203,6 +203,53 @@ the heartbeat wallet.
   (`apps/web/src/components/__tests__/`) using `@testing-library/react` +
   `happy-dom` patched onto Node's test runner (no vitest/jest needed).
 
+## Correction: GenVM has real deterministic time — the epoch/heartbeat system was unnecessary (2026-08-12)
+
+Third contract redeploy, `0xeAA878c17b2D979285b2DdB95C0E325Be802fd17`. The
+original contract assumed "GenVM contract code has no trusted timestamp
+primitive" and built a whole virtual-epoch-counter-plus-heartbeat-loop
+system to work around that — **this assumption was wrong**, caught by the
+user pointing at a working sibling contract (`~/Event-Weaver`). GenVM
+patches Python's `datetime.datetime.now()` to a consensus-agreed block
+timestamp that every validator computes identically; it's real, unspoofable
+wall-clock time, not something that needs a workaround. Verified directly
+in Event-Weaver's `_now_ts()` (`contracts/event_weaver.py:428`) before
+touching anything.
+
+Rewrote the contract accordingly:
+- Removed `epoch_counter`, `heartbeat()`, `get_current_epoch()`, and the
+  `last_heartbeat_epoch` tracking map entirely.
+- All `*_epoch` fields renamed to `*_ts` (real unix timestamps):
+  `submission_deadline_ts`, `evaluation_timeout_ts`, `created_ts`,
+  `evaluated_ts`, `submitted_ts`. New `_now_ts()` helper +
+  `get_current_time()` view.
+- `create_bounty`'s window/timeout params changed from epoch counts to
+  `submission_window_seconds`/`evaluation_timeout_seconds` — real
+  durations, defaulting to 1h/2h. Frontend now shows an actual
+  `datetime-local` picker for the submission deadline (converts to
+  seconds-from-now) plus an hours field for the evaluation timeout,
+  replacing the confusing raw epoch-count inputs from before.
+- Bounds: `MIN_SUBMISSION_WINDOW_SECONDS=60`,
+  `MAX_SUBMISSION_WINDOW_SECONDS=90 days`,
+  `MAX_EVALUATION_TIMEOUT_SECONDS=180 days`.
+
+Replaced `apps/api/src/lib/heartbeat.ts` (deleted) with
+`lib/deadline-watcher.ts`: a loop on the same schedule that, per bounty,
+checks whether a real on-chain deadline has actually passed and — since
+`evaluate_bounty`/`settle`/`claim_timeout_refund` are all permissionless —
+calls whichever one applies, using the same backend-owned wallet
+previously dedicated to heartbeat calls (env var kept as
+`HEARTBEAT_PRIVATE_KEY` for continuity, comments updated to explain the
+new purpose). This is what actually delivers "backend closes the dispute
+and triggers evaluation itself" — the epoch/heartbeat system never could,
+since it required *someone* to keep calling heartbeat() to make time pass
+at all. Extracted the on-chain-state-mirroring logic shared by the manual
+sync route and this new automation loop into `lib/sync-evaluation.ts`.
+
+Cleared both prior-contract bounties from the database per the user's
+request (`b1e2baf3-...` on `0xC474415D...`, `4636a2bc-...` on
+`0x87284Ed4...`) — clean slate on the new contract.
+
 ## Open / pending
 
 - **Custom domain** — still on shared `*.vercel.app`, which triggered a
@@ -214,7 +261,8 @@ the heartbeat wallet.
   scanning on evidence links. See `docs/security.md` for the full list.
 - **No CI pipeline** — tests exist (`docs/testing.md`) but nothing runs
   them automatically on push yet.
-- **Orphaned pre-redeploy bounty** (`b1e2baf3-...`, DB row still present)
-  points at the old contract address; its escrowed GEN is unreachable
-  through this app now. Flagged in the UI via the stale-contract banner,
-  not yet cleaned up in the DB.
+- **Deadline watcher is unverified against a real deadline yet** — deployed
+  and started cleanly (confirmed via health check + `current_time` reading
+  correctly on-chain), but no bounty has actually reached its deadline
+  since deploy, so the evaluate/settle/refund trigger path itself hasn't
+  been exercised live.

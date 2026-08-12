@@ -88,7 +88,7 @@ export function EvaluationPanel({ bounty, evaluation }: { bounty: Bounty; evalua
           <p className="text-sm text-text-secondary">
             {isCreator
               ? "As the creator, you can start evaluation now. Anyone else can start it once the submission window closes."
-              : "Evaluation can be started by the creator now, or by anyone once the submission window closes (the contract's virtual clock advances roughly every 2 minutes)."}
+              : "Evaluation can be started by the creator now, or automatically once the submission deadline passes — no one needs to click anything for that to happen."}
           </p>
           <TxLifecycle state={state} txHash={txHash} errorMessage={errorMessage} />
           {note && <p className="text-secondary text-sm">{note}</p>}

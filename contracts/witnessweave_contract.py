@@ -1,6 +1,7 @@
 # v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
+import datetime
 import json
 import re
 from dataclasses import dataclass
@@ -33,15 +34,18 @@ VERDICT_FAILED = "FAILED"
 VERDICT_PARTIAL_PASS = "PARTIAL_PASS"
 VERDICT_NEEDS_HUMAN_REVIEW = "NEEDS_HUMAN_REVIEW"
 
-# --- timing window bounds, expressed in virtual epochs. Defaults for
-# create_bounty's submission_window_epochs/evaluation_timeout_epochs
-# parameters are plain int literals (20 / 40) directly on the method
-# signature rather than referencing these — GenVM's calldata schema
-# generator requires default values to be simple literals, not module-level
-# constant expressions. -----------------------------------------------
-MIN_SUBMISSION_WINDOW_EPOCHS = u256(1)
-MAX_SUBMISSION_WINDOW_EPOCHS = u256(2000)
-MAX_EVALUATION_TIMEOUT_EPOCHS = u256(4000)
+# --- timing window bounds, expressed in seconds. Defaults for
+# create_bounty's submission_window_seconds/evaluation_timeout_seconds
+# parameters are plain int literals directly on the method signature
+# rather than referencing these — GenVM's calldata schema generator
+# requires default values to be simple literals, not module-level constant
+# expressions. GenVM patches Python's datetime.now() to a consensus-agreed
+# block timestamp (every validator computes it identically — it is never
+# read from caller-supplied calldata, so it can't be spoofed), so deadlines
+# are real wall-clock time, not an invented virtual clock. -----------------
+MIN_SUBMISSION_WINDOW_SECONDS = 60  # 1 minute floor, mostly to block degenerate zero-window bounties
+MAX_SUBMISSION_WINDOW_SECONDS = 60 * 60 * 24 * 90  # 90 days
+MAX_EVALUATION_TIMEOUT_SECONDS = 60 * 60 * 24 * 180  # 180 days
 
 # --- basis-point knobs (1 bps = 0.01%) ---------------------------------
 BPS_DENOMINATOR = u256(10000)
@@ -205,9 +209,9 @@ class BountyRecord:
 
     testimony_count: u256
 
-    created_epoch: u256
-    submission_deadline_epoch: u256
-    evaluation_timeout_epoch: u256
+    created_ts: u256
+    submission_deadline_ts: u256
+    evaluation_timeout_ts: u256
 
     # --- evaluation outcome, populated once EVALUATED -------------------
     verdict: str
@@ -215,7 +219,7 @@ class BountyRecord:
     payout_bps: u256
     rationale: str
     corroboration_json: str
-    evaluated_epoch: u256
+    evaluated_ts: u256
 
     reward_claimed: bool
 
@@ -237,7 +241,7 @@ class TestimonyRecord:
     status: str
     consistency_bps: u256
 
-    submitted_epoch: u256
+    submitted_ts: u256
 
 
 # ======================================================================
@@ -479,10 +483,6 @@ def _finalize_verdict(result: dict, snapshot: list) -> tuple:
 class WitnessWeave(gl.Contract):
     owner: Address
 
-    # -- virtual epoch clock -------------------------------------------
-    epoch_counter: u256
-    last_heartbeat_epoch: TreeMap[Address, u256]
-
     # -- id sequencing ----------------------------------------------------
     next_bounty_seq: u256
     next_testimony_seq: u256
@@ -498,36 +498,24 @@ class WitnessWeave(gl.Contract):
 
     def __init__(self):
         self.owner = gl.message.sender_address
-        self.epoch_counter = u256(0)
         self.next_bounty_seq = u256(0)
         self.next_testimony_seq = u256(0)
 
     # ------------------------------------------------------------------
-    # Virtual epoch clock
+    # Clock
     # ------------------------------------------------------------------
 
-    @gl.public.write
-    def heartbeat(self) -> u256:
-        """Permissionlessly advances the contract's virtual clock by one
-        epoch. GenVM contract code has no trusted timestamp primitive, so
-        submission windows and evaluation timeouts are measured in epochs
-        rather than wall-clock time. Anyone may call this at the cost of
-        their own gas; a caller bumping twice within the same epoch is a
-        cheap no-op (their own last-bump marker is updated either way), so
-        no single caller can advance the shared clock more than once per
-        epoch on their own."""
-        caller = gl.message.sender_address
-        last = _tm_get(self.last_heartbeat_epoch, caller, u256(0))
-        if last < self.epoch_counter:
-            self.last_heartbeat_epoch[caller] = self.epoch_counter
-            return self.epoch_counter
-        self.epoch_counter = self.epoch_counter + u256(1)
-        self.last_heartbeat_epoch[caller] = self.epoch_counter
-        return self.epoch_counter
+    def _now_ts(self) -> u256:
+        """Authenticated, consensus-agreed clock. GenVM patches
+        datetime.now() to the network's block time, which every validator
+        computes identically — it is never read from caller-supplied
+        arguments or calldata, so it cannot be spoofed by a transaction
+        sender to fabricate a future or stale time."""
+        return u256(int(datetime.datetime.now(datetime.timezone.utc).timestamp()))
 
     @gl.public.view
-    def get_current_epoch(self) -> int:
-        return int(self.epoch_counter)
+    def get_current_time(self) -> int:
+        return int(self._now_ts())
 
     # ------------------------------------------------------------------
     # ID generation
@@ -554,12 +542,17 @@ class WitnessWeave(gl.Contract):
         description: str,
         evidence_requirements: str,
         witness_bond_wei: int,
-        submission_window_epochs: int = 20,
-        evaluation_timeout_epochs: int = 40,
+        submission_window_seconds: int = 3600,
+        evaluation_timeout_seconds: int = 7200,
     ) -> str:
         """Escrows the GEN reward (via gl.message.value) and opens a new
         Testimony Bounty. The reward is only ever released through settle(),
         claim_timeout_refund(), or cancel_bounty() — never anywhere else.
+
+        Deadlines are real wall-clock time (see _now_ts) — the caller picks
+        how many seconds from now the submission window and, after that,
+        the evaluation timeout should last; the frontend translates a
+        human-picked date/time into this duration.
 
         Money-shaped parameters are typed as plain `int` here rather than
         `u256`, and list-shaped data is never accepted as a parameter at
@@ -579,18 +572,18 @@ class WitnessWeave(gl.Contract):
         )
         _require(witness_bond_wei >= 0, f"{ERROR_EXPECTED} witness_bond_wei cannot be negative")
         _require(
-            submission_window_epochs >= int(MIN_SUBMISSION_WINDOW_EPOCHS)
-            and submission_window_epochs <= int(MAX_SUBMISSION_WINDOW_EPOCHS),
-            f"{ERROR_EXPECTED} submission_window_epochs out of allowed range",
+            submission_window_seconds >= MIN_SUBMISSION_WINDOW_SECONDS
+            and submission_window_seconds <= MAX_SUBMISSION_WINDOW_SECONDS,
+            f"{ERROR_EXPECTED} submission_window_seconds out of allowed range",
         )
         _require(
-            evaluation_timeout_epochs > 0 and evaluation_timeout_epochs <= int(MAX_EVALUATION_TIMEOUT_EPOCHS),
-            f"{ERROR_EXPECTED} evaluation_timeout_epochs out of allowed range",
+            evaluation_timeout_seconds > 0 and evaluation_timeout_seconds <= MAX_EVALUATION_TIMEOUT_SECONDS,
+            f"{ERROR_EXPECTED} evaluation_timeout_seconds out of allowed range",
         )
 
         bounty_id = self._next_bounty_id()
-        now = self.epoch_counter
-        deadline = now + u256(submission_window_epochs)
+        now = self._now_ts()
+        deadline = now + u256(submission_window_seconds)
 
         self.bounties[bounty_id] = BountyRecord(
             bounty_id=bounty_id,
@@ -603,15 +596,15 @@ class WitnessWeave(gl.Contract):
             reward_deposited=gl.message.value,
             witness_bond_wei=u256(witness_bond_wei),
             testimony_count=u256(0),
-            created_epoch=now,
-            submission_deadline_epoch=deadline,
-            evaluation_timeout_epoch=deadline + u256(evaluation_timeout_epochs),
+            created_ts=now,
+            submission_deadline_ts=deadline,
+            evaluation_timeout_ts=deadline + u256(evaluation_timeout_seconds),
             verdict="",
             confidence_bps=u256(0),
             payout_bps=u256(0),
             rationale="",
             corroboration_json="",
-            evaluated_epoch=u256(0),
+            evaluated_ts=u256(0),
             reward_claimed=False,
         )
         return bounty_id
@@ -668,7 +661,7 @@ class WitnessWeave(gl.Contract):
         bounty = self._get_bounty_or_raise(bounty_id)
         _require(bounty.status == STATUS_OPEN, f"{ERROR_EXPECTED} Bounty is not accepting testimony")
         _require(
-            self.epoch_counter <= bounty.submission_deadline_epoch,
+            self._now_ts() <= bounty.submission_deadline_ts,
             f"{ERROR_EXPECTED} Submission window has closed",
         )
         _require(
@@ -716,7 +709,7 @@ class WitnessWeave(gl.Contract):
             bond_claimed=False,
             status=TESTIMONY_SUBMITTED,
             consistency_bps=u256(0),
-            submitted_epoch=self.epoch_counter,
+            submitted_ts=self._now_ts(),
         )
 
         index_key = f"{bounty_id}:{int(bounty.testimony_count)}"
@@ -762,7 +755,7 @@ class WitnessWeave(gl.Contract):
         _require(bounty.testimony_count > u256(0), f"{ERROR_EXPECTED} No testimony has been submitted yet")
         can_evaluate_early = gl.message.sender_address == bounty.creator
         _require(
-            can_evaluate_early or self.epoch_counter > bounty.submission_deadline_epoch,
+            can_evaluate_early or self._now_ts() > bounty.submission_deadline_ts,
             f"{ERROR_EXPECTED} Only the creator may start evaluation before the submission window closes",
         )
 
@@ -817,7 +810,7 @@ class WitnessWeave(gl.Contract):
         bounty.payout_bps = u256(payout_bps)
         bounty.rationale = rationale[:MAX_TEXT_FIELD_LEN]
         bounty.corroboration_json = json.dumps(corroboration)[:8000]
-        bounty.evaluated_epoch = self.epoch_counter
+        bounty.evaluated_ts = self._now_ts()
         self.bounties[bounty_id] = bounty
 
 
@@ -901,7 +894,7 @@ class WitnessWeave(gl.Contract):
             f"{ERROR_EXPECTED} Bounty is not eligible for a timeout refund",
         )
         _require(
-            self.epoch_counter > bounty.evaluation_timeout_epoch,
+            self._now_ts() > bounty.evaluation_timeout_ts,
             f"{ERROR_EXPECTED} Evaluation timeout has not yet passed",
         )
         _require(not bounty.reward_claimed, f"{ERROR_EXPECTED} Reward has already been settled")
@@ -977,15 +970,15 @@ class WitnessWeave(gl.Contract):
                 "reward_deposited": str(b.reward_deposited),
                 "witness_bond_wei": str(b.witness_bond_wei),
                 "testimony_count": int(b.testimony_count),
-                "created_epoch": int(b.created_epoch),
-                "submission_deadline_epoch": int(b.submission_deadline_epoch),
-                "evaluation_timeout_epoch": int(b.evaluation_timeout_epoch),
+                "created_ts": int(b.created_ts),
+                "submission_deadline_ts": int(b.submission_deadline_ts),
+                "evaluation_timeout_ts": int(b.evaluation_timeout_ts),
                 "verdict": b.verdict,
                 "confidence_bps": int(b.confidence_bps),
                 "payout_bps": int(b.payout_bps),
                 "rationale": b.rationale,
                 "corroboration": json.loads(b.corroboration_json) if b.corroboration_json else None,
-                "evaluated_epoch": int(b.evaluated_epoch),
+                "evaluated_ts": int(b.evaluated_ts),
                 "reward_claimed": b.reward_claimed,
             }
         )
@@ -1008,7 +1001,7 @@ class WitnessWeave(gl.Contract):
                 "bond_claimed": t.bond_claimed,
                 "status": t.status,
                 "consistency_bps": int(t.consistency_bps),
-                "submitted_epoch": int(t.submitted_epoch),
+                "submitted_ts": int(t.submitted_ts),
             }
         )
 
@@ -1025,7 +1018,7 @@ class WitnessWeave(gl.Contract):
         return json.dumps(
             {
                 "owner": self.owner.as_hex,
-                "current_epoch": int(self.epoch_counter),
+                "current_time": int(self._now_ts()),
                 "total_bounties": int(self.next_bounty_seq),
                 "total_testimonies": int(self.next_testimony_seq),
             }

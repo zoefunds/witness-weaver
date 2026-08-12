@@ -161,7 +161,13 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       // the off-chain testimony draft is saved, but we don't want to
       // navigate away and hide the failure the way create-bounty used to.
     } catch (err) {
-      setFormError(err instanceof ApiError ? `Couldn't submit testimony (${err.status}).` : "Something went wrong.");
+      if (err instanceof ApiError && err.status === 409 && (err.body as { error?: string })?.error === "already_submitted") {
+        setFormError(
+          "This wallet has already submitted testimony for this bounty — each wallet can only testify once per bounty. Connect a different wallet to submit another account.",
+        );
+      } else {
+        setFormError(err instanceof ApiError ? `Couldn't submit testimony (${err.status}).` : "Something went wrong.");
+      }
     } finally {
       setSubmitting(false);
     }

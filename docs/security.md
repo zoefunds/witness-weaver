@@ -34,4 +34,4 @@
 ## Secrets
 
 - No secret is ever committed — verified via `.gitignore` covering `.env*`.
-- The heartbeat bot's private key (`HEARTBEAT_PRIVATE_KEY`) is a Fly.io secret, never in source. It has no special contract privileges beyond paying its own gas — the contract's `owner` field is recorded at deploy time but no method currently checks it, so compromising this key risks only its own GEN balance, never bounty escrow.
+- The deadline-watcher automation wallet's private key (`HEARTBEAT_PRIVATE_KEY` — named for its original purpose, now used to call `evaluate_bounty`/`settle`/`claim_timeout_refund` automatically once their deadline passes) is a Fly.io secret, never in source. It has no special contract privileges beyond paying its own gas for these calls, which are permissionless for anyone — the contract's `owner` field is recorded at deploy time but no method currently checks it, so compromising this key risks only its own GEN balance, never bounty escrow.

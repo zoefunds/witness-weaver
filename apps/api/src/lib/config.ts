@@ -25,14 +25,16 @@ export const config = {
   genlayer: {
     rpcUrl: process.env.GENLAYER_RPC_URL ?? "",
     contractAddress: process.env.GENLAYER_CONTRACT_ADDRESS ?? "",
-    // A dedicated, backend-owned wallet used ONLY to call the contract's
-    // permissionless heartbeat() — GenVM contract code has no trusted
-    // timestamp, so the contract's submission-window/evaluation-timeout
-    // logic runs on a virtual epoch counter that only advances when
-    // someone calls heartbeat(). This wallet needs a small GEN balance on
-    // StudioNet to cover gas; it never touches bounty funds.
+    // A dedicated, backend-owned wallet used ONLY by the deadline watcher
+    // (lib/deadline-watcher.ts) to call the contract's permissionless
+    // evaluate_bounty/settle/claim_timeout_refund once their respective
+    // deadline has genuinely passed — closing out bounties nobody's
+    // actively watching in a browser. Contract deadlines are real
+    // wall-clock timestamps (GenVM patches datetime.now() to a
+    // consensus-agreed block time), not an invented clock this wallet
+    // has to advance itself. Needs a small GEN balance on StudioNet to
+    // cover gas; it never touches bounty funds.
     heartbeatPrivateKey: process.env.HEARTBEAT_PRIVATE_KEY ?? "",
-    heartbeatIntervalMs: Number(process.env.HEARTBEAT_INTERVAL_MS ?? 120_000),
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "",
