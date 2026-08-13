@@ -8,6 +8,7 @@ import { LinkButton } from "@/components/ui/Button";
 import { FundEscrowButton } from "@/components/bounty/FundEscrowButton";
 import { EvaluationPanel } from "@/components/bounty/EvaluationPanel";
 import { ClaimTimeoutRefundButton } from "@/components/bounty/ClaimTimeoutRefundButton";
+import { CancelBountyButton } from "@/components/bounty/CancelBountyButton";
 import { formatGen, shortHash, timeAgo } from "@/lib/format";
 import { getChainBounty, type ChainBountyFull } from "@/lib/genlayer-client";
 import type { Bounty, Evaluation, Testimony } from "@/lib/api";
@@ -175,6 +176,7 @@ function BountyDetail({
           {!isStale && (
             <>
               <EvaluationPanel bounty={bounty} evaluation={evaluation} />
+              <CancelBountyButton bounty={bounty} testimonyCount={testimonies.length} />
               <ClaimTimeoutRefundButton bounty={bounty} />
             </>
           )}
