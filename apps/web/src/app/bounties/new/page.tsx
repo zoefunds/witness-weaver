@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { TxLifecycle } from "@/components/tx/TxLifecycle";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
 import { api, ApiError, type Bounty } from "@/lib/api";
-import { isContractConfigured, resolveChainBountyId } from "@/lib/genlayer-client";
-import { useAccount } from "wagmi";
+import { isContractConfigured } from "@/lib/genlayer-client";
 
 /** "YYYY-MM-DDTHH:mm" in local time, for <input type="datetime-local">'s default value. */
 function defaultDeadlineInput(hoursFromNow: number): string {
@@ -33,7 +32,6 @@ const INCIDENT_TYPES = [
 export default function CreateBountyPage() {
   const router = useRouter();
   const { write, state, txHash, errorMessage, reset } = useGenlayerWrite();
-  const { address } = useAccount();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // Once the off-chain draft is created, we hold onto it so a failed/rejected
@@ -154,22 +152,21 @@ export default function CreateBountyPage() {
       });
 
       if (result) {
-        // create_bounty's own return value (the contract's sequential
-        // bounty id) isn't reliably reachable from the transaction receipt
-        // shape, so it's resolved with a follow-up read instead — see
-        // resolveChainBountyId's own comment for why.
-        const chainBountyId = address ? await resolveChainBountyId(address, form.title) : null;
-        await api.patch(`/bounties/${bounty.id}/chain-sync`, {
-          createTxHash: result.txHash,
-          status: "open",
-          rewardDepositedWei: rewardWei.toString(),
-          chainBountyId: chainBountyId ?? undefined,
-        });
+        // This is the exact id returned by create_bounty in the finalized
+        // leader receipt. Never infer it from a tx hash or scan nearby
+        // bounties: concurrent creations make both approaches unsafe.
+        const chainBountyId = result.contractReturn;
         if (!chainBountyId) {
           setFormError(
-            "Escrow confirmed, but we couldn't automatically detect the contract's bounty id — refresh the bounty page in a moment; it should sync shortly.",
+            "Escrow confirmed, but GenLayer did not provide the contract-generated bounty id. Your draft remains unfunded; retry instead of risking an incorrect association.",
           );
+          return;
         }
+        await api.patch(`/bounties/${bounty.id}/chain-sync`, {
+          status: "open",
+          rewardDepositedWei: rewardWei.toString(),
+          chainBountyId,
+        });
         router.push(`/bounties/${bounty.id}`);
       }
       // If the escrow transaction failed or was rejected, `result` is null

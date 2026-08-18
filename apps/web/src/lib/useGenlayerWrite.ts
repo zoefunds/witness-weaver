@@ -24,6 +24,28 @@ interface WriteOptions {
 
 interface WriteResult {
   txHash: string;
+  /** Exact value returned by the finalized contract call, when it has one. */
+  contractReturn?: string;
+}
+
+/**
+ * GenLayer exposes a write's return value on the finalized leader receipt.
+ * Keep this deliberately strict: accepting a value from any other receipt or
+ * guessing from contract state could associate a draft with somebody else's
+ * concurrent write.
+ */
+export function contractReturnFromReceipt(receipt: unknown): string | undefined {
+  const leaderReceipts = (receipt as { consensus_data?: { leader_receipt?: unknown[] } } | undefined)?.consensus_data
+    ?.leader_receipt;
+  if (!Array.isArray(leaderReceipts) || leaderReceipts.length !== 1) return undefined;
+  const result = (leaderReceipts[0] as { result?: unknown } | undefined)?.result;
+  if (typeof result !== "string") return undefined;
+  try {
+    const decoded: unknown = JSON.parse(result);
+    return typeof decoded === "string" ? decoded : undefined;
+  } catch {
+    return result.length > 0 ? result : undefined;
+  }
 }
 
 function sleep(ms: number) {
@@ -145,7 +167,7 @@ export function useGenlayerWrite() {
         }
 
         setState("confirmed");
-        return { txHash: hash };
+        return { txHash: hash, contractReturn: contractReturnFromReceipt(receipt) };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const rejected = /user rejected|denied/i.test(message);

@@ -3,8 +3,10 @@
 import { Button } from "@/components/ui/Button";
 import { useGenlayerWrite } from "@/lib/useGenlayerWrite";
 import { formatGen } from "@/lib/format";
+import { api } from "@/lib/api";
 
 interface ClaimableTestimony {
+  bounty_id: string;
   chain_testimony_id: string | null;
   bond_deposited_wei: string;
   bond_claimed: boolean;
@@ -30,7 +32,12 @@ export function ClaimBondRefundButton({ testimony, onClaimed }: { testimony: Cla
       args: [testimony.chain_testimony_id],
       value: 0n,
     });
-    if (result) onClaimed?.();
+    if (result) {
+      // Read the contract back through the standard sync path so the refund
+      // is reflected in Postgres before refreshing the witness dashboard.
+      await api.post(`/bounties/${testimony.bounty_id}/sync-evaluation`);
+      onClaimed?.();
+    }
   }
 
   return (

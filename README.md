@@ -113,6 +113,56 @@ supports primitive types — `str`/`int`/`bool` — as public method
 *parameters*; lists/dicts are fine as storage or return values, just not
 inputs, and the frontend/backend both `JSON.parse` accordingly).
 
+## Contract identity and outcome synchronization
+
+The database is a convenience mirror, but the contract is the authority for
+all bounty and testimony identities and for every terminal outcome.
+
+- `create_bounty` returns the contract-generated `bounty:<n>` identifier.
+  Once the write finalizes, the frontend reads that exact return value from
+  the single leader receipt and persists it as `bounties.chain_bounty_id`.
+- `submit_testimony` follows the same rule for `testimony:<n>`, persisted as
+  `testimonies.chain_testimony_id`.
+- The app never derives either identifier from a transaction hash, title,
+  creator, sequence scan, or other heuristic. If a finalized receipt does
+  not contain exactly one string return value, the off-chain draft remains
+  unlinked rather than risking association with another user's concurrent
+  contract write.
+- `syncBountyEvaluation` reads `get_bounty_testimonies` and then every
+  `get_testimony` from the contract. It mirrors the bounty verdict, each
+  testimony's status and consistency score, and the bond state
+  (`bond_deposited_wei`, `bond_claimed`) atomically in PostgreSQL.
+- A successful `claim_bond_refund` triggers this same sync before the
+  witness dashboard refreshes. The claimed bond is therefore shown as zero
+  and no longer offers a duplicate claim action.
+
+The `bond_claimed` database column is supplied by migration
+`1739900000000_testimony_bond_claimed.ts`. Apply migrations before releasing
+the API:
+
+```bash
+cd apps/api
+npm run migrate
+```
+
+### Verification
+
+```bash
+# Fast checks
+npm run build --workspace apps/api
+npm test --workspace apps/api
+npm test --workspace apps/web
+
+# Opt-in Postgres end-to-end mirror test; uses short-lived fixture data and
+# removes it after the test. Run only against a dedicated/test database.
+RUN_CHAIN_SYNC_E2E=1 npm test --workspace apps/api
+```
+
+The E2E test verifies a resolved contract snapshot changes a testimony to
+`corroborated` with its consistency score, then verifies the next snapshot
+after `claim_bond_refund` sets `bond_deposited_wei` to `0` and
+`bond_claimed` to `true`.
+
 ## Deployment
 
 - **Frontend:** Vercel project `witness-weave`, deployed via `vercel deploy --prod`

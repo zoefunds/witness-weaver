@@ -10,6 +10,7 @@
     "test": "node --import tsx --test 'src/**/__tests__/*.test.ts' 'src/**/__tests__/*.test.tsx'"
   },
   "dependencies": {
+    "@base-org/account": "^2.5.10",
     "@metamask/connect-evm": "^2.1.1",
     "@reown/appkit": "^1.8.23",
     "@reown/appkit-adapter-wagmi": "^1.8.23",

@@ -71,6 +71,9 @@ export interface Testimony {
   statement_hash: string;
   is_anonymous: boolean;
   status: "submitted" | "under_review" | "corroborated" | "disputed" | "rejected";
+  chain_testimony_id: string | null;
+  bond_deposited_wei: string;
+  bond_claimed: boolean;
   created_at: string;
   evidence?: { id: string; kind: string; url: string }[];
 }

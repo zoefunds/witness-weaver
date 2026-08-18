@@ -3,6 +3,11 @@ import { readContractView } from "./genlayer.js";
 import { config } from "./config.js";
 import { notify } from "./notify.js";
 
+type SyncDependencies = {
+  readContractView: typeof readContractView;
+  contractAddress: string;
+};
+
 interface ChainBounty {
   bounty_id: string;
   status: string;
@@ -18,6 +23,8 @@ interface ChainTestimony {
   testimony_id: string;
   status: string;
   consistency_bps: number;
+  bond_deposited: string;
+  bond_claimed: boolean;
 }
 
 const CHAIN_TO_DB_BOUNTY_STATUS: Record<string, string> = {
@@ -57,7 +64,12 @@ const REPUTATION_DELTA_REJECTED = -800;
  * the backend's own automation loop (lib/deadline-watcher.ts, for
  * bounties nobody's actively watching in a browser).
  */
-export async function syncBountyEvaluation(bountyId: string) {
+export async function syncBountyEvaluation(
+  bountyId: string,
+  dependencies: Partial<SyncDependencies> = {},
+) {
+  const chainRead = dependencies.readContractView ?? readContractView;
+  const contractAddress = dependencies.contractAddress ?? config.genlayer.contractAddress;
   // Everything below used to run as separate pool.query calls, each
   // grabbing whatever connection was free — a transient connection drop
   // partway through (confirmed happening on this DB) could let the bounty
@@ -75,8 +87,8 @@ export async function syncBountyEvaluation(bountyId: string) {
     if (!bounty) throw new Error(`bounty_not_found: ${bountyId}`);
     if (!bounty.chain_bounty_id) throw new Error(`bounty_not_on_chain: ${bountyId}`);
 
-    const chainBounty = await readContractView<ChainBounty>("get_bounty", [bounty.chain_bounty_id]);
-    const testimonyIds = await readContractView<string[]>("get_bounty_testimonies", [bounty.chain_bounty_id]);
+    const chainBounty = await chainRead<ChainBounty>("get_bounty", [bounty.chain_bounty_id]);
+    const testimonyIds = await chainRead<string[]>("get_bounty_testimonies", [bounty.chain_bounty_id]);
 
     const dbStatus = CHAIN_TO_DB_BOUNTY_STATUS[chainBounty.status] ?? bounty.status;
     await client.query(`update bounties set status = $2, reward_claimed = $3, updated_at = now() where id = $1`, [
@@ -129,14 +141,21 @@ export async function syncBountyEvaluation(bountyId: string) {
     }
 
     for (const chainTestimonyId of testimonyIds) {
-      const chainTestimony = await readContractView<ChainTestimony>("get_testimony", [chainTestimonyId]);
+      const chainTestimony = await chainRead<ChainTestimony>("get_testimony", [chainTestimonyId]);
       const newStatus = CHAIN_TO_DB_TESTIMONY_STATUS[chainTestimony.status];
       if (!newStatus) continue;
-      await client.query("update testimonies set status = $2, consistency_bps = $3 where chain_testimony_id = $1", [
+      await client.query(
+        `update testimonies set
+           status = $2, consistency_bps = $3, bond_deposited_wei = $4, bond_claimed = $5
+         where chain_testimony_id = $1`,
+        [
         chainTestimonyId,
         newStatus,
         chainTestimony.consistency_bps,
-      ]);
+        chainTestimony.bond_deposited,
+        chainTestimony.bond_claimed,
+        ],
+      );
     }
 
     let justResolved = false;
@@ -178,7 +197,7 @@ export async function syncBountyEvaluation(bountyId: string) {
         await client.query(
           `insert into truth_records (bounty_id, evaluation_id, contract_address)
            values ($1, $2, $3)`,
-          [bountyId, evaluationId, config.genlayer.contractAddress],
+          [bountyId, evaluationId, contractAddress],
         );
         justResolved = true;
       }

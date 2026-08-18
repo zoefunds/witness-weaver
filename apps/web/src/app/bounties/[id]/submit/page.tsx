@@ -183,7 +183,16 @@ export default function SubmitTestimonyPage({ params }: { params: Promise<{ id: 
       });
 
       if (result) {
-        await api.patch(`/testimonies/${testimony.id}/chain-sync`, { submitTxHash: result.txHash });
+        // submit_testimony returns its contract-generated id in the same
+        // finalized receipt. Persist only that authoritative id.
+        if (!result.contractReturn) {
+          setFormError("Your testimony was confirmed, but GenLayer did not provide its contract-generated id. It was not linked locally; retrying would create a second on-chain testimony.");
+          return;
+        }
+        await api.patch(`/testimonies/${testimony.id}/chain-sync`, {
+          chainTestimonyId: result.contractReturn,
+          bondDepositedWei: bounty.witness_bond_wei,
+        });
         router.push(`/bounties/${bountyId}`);
       }
       // If the on-chain submission failed/was rejected, stay on the page —
