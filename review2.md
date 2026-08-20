@@ -18,8 +18,8 @@ The previous database integration test supplied synthetic contract-view
 objects and an injected reader to `syncBountyEvaluation`. It also changed a
 local JavaScript refund flag. That path has been removed from:
 
-- `apps/api/test/db-integration.test.ts`
-- `apps/api/src/lib/sync-evaluation.ts`
+- [`apps/api/test/db-integration.test.ts`](./apps/api/test/db-integration.test.ts)
+- [`apps/api/src/lib/sync-evaluation.ts`](./apps/api/src/lib/sync-evaluation.ts)
 
 `syncBountyEvaluation` now accepts only the local bounty ID and always uses
 the production `readContractView` path. There is no reader injection, mocked
@@ -27,7 +27,7 @@ contract state, or manually altered refund snapshot in the replacement test.
 
 ### 2. Added a real contract + database E2E test
 
-New file: `apps/api/test/genlayer-refund.e2e.test.ts`
+New file: [`apps/api/test/genlayer-refund.e2e.test.ts`](./apps/api/test/genlayer-refund.e2e.test.ts)
 
 New opt-in command:
 
@@ -37,7 +37,7 @@ npm run test:e2e:refund --workspace apps/api
 
 The test uses a Docker-backed GenLayer localnet, fresh funded accounts, an
 isolated Postgres database, and the actual production contract source at
-`contracts/witnessweave_contract.py`.
+[`contracts/witnessweave_contract.py`](./contracts/witnessweave_contract.py).
 
 ### 3. Added explicit localnet test configuration
 
