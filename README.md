@@ -153,15 +153,24 @@ npm run build --workspace apps/api
 npm test --workspace apps/api
 npm test --workspace apps/web
 
-# Opt-in Postgres end-to-end mirror test; uses short-lived fixture data and
-# removes it after the test. Run only against a dedicated/test database.
-RUN_CHAIN_SYNC_E2E=1 npm test --workspace apps/api
+# Start the Docker-backed GenLayer simulator (in one terminal).
+genlayer up --headless --reset-db --reset-validators --numValidators 1
+
+# In another terminal, run the real-contract refund proof against a dedicated
+# local/test Postgres database. The test deploys the production contract,
+# executes each write, then calls the normal production sync code.
+docker compose up -d postgres
+DATABASE_URL=postgres://witnessweave:changeme@localhost:5432/witnessweave \
+  npm run test:e2e:refund --workspace apps/api
 ```
 
-The E2E test verifies a resolved contract snapshot changes a testimony to
-`corroborated` with its consistency score, then verifies the next snapshot
-after `claim_bond_refund` sets `bond_deposited_wei` to `0` and
-`bond_claimed` to `true`.
+The E2E test deploys `contracts/witnessweave_contract.py` to localnet with
+newly generated, simulator-funded creator and witness accounts. It creates a
+bonded bounty and testimony, syncs its real submitted state, executes the
+contract's `claim_timeout_refund` and the witness's actual
+`claim_bond_refund` transaction, reads the contract to prove its bond state
+became `0` / `true`, then calls `syncBountyEvaluation` with no mocks or
+overrides and verifies the same values are persisted in PostgreSQL.
 
 ## Deployment
 

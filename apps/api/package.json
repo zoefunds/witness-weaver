@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "migrate": "node-pg-migrate up -j ts --tsconfig tsconfig.json -m src/db/migrations",
     "migrate:down": "node-pg-migrate down -j ts --tsconfig tsconfig.json -m src/db/migrations",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:e2e:refund": "RUN_GENLAYER_REFUND_E2E=1 node --import tsx --test test/genlayer-refund.e2e.test.ts"
   },
   "keywords": [],
   "author": "",

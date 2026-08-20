@@ -28,6 +28,27 @@ validates the contract compiles and its schema loads correctly — this is
 what would have caught the "could not load contract schema" class of bug
 before deployment, and is documented in `docs/genlayer.md`.
 
+**Real contract + database E2E refund proof** (opt-in, Docker required):
+
+```bash
+# terminal 1
+genlayer up --headless --reset-db --reset-validators --numValidators 1
+
+# terminal 2
+docker compose up -d postgres
+DATABASE_URL=postgres://witnessweave:changeme@localhost:5432/witnessweave \
+  npm run test:e2e:refund --workspace apps/api
+```
+
+`apps/api/test/genlayer-refund.e2e.test.ts` deploys the production
+`WitnessWeave` contract to GenLayer localnet, funds fresh simulator accounts,
+creates a bonded bounty and testimony, performs the terminal timeout path,
+and executes `claim_bond_refund` from the witness account. It first asserts
+the actual post-transaction `get_testimony` state (`bond_deposited == 0`,
+`bond_claimed == true`) and only then calls the unmodified production
+`syncBountyEvaluation` function, which reads the real contract and persists
+the matching PostgreSQL state. No contract view or sync dependency is mocked.
+
 ## What's NOT covered, and why
 
 - **No integration tests against a real GenLayer StudioNet contract.**
@@ -39,20 +60,18 @@ before deployment, and is documented in `docs/genlayer.md`.
   and real wallet signatures. The honest testing strategy for this class of
   bug is careful manual verification against StudioNet before and after
   every deploy, which is what actually happened here.
-- **No database-backed API integration tests.** The route handlers are
-  thin (parse → query → respond) and were verified manually via `curl`
-  against the live database during development; a proper test suite would
-  spin up a disposable Postgres instance per test run (e.g. via
-  `pg-mem` or a Docker Compose test service) — not yet built.
+- **No always-on database test service in CI yet.** The refund proof is a
+  Docker-backed, opt-in test so it can deploy and execute a real local
+  GenLayer contract plus Postgres without ever using a production wallet or
+  database. A CI job that starts both services remains future work.
 - **No React component tests.** The UI was verified visually against the
   deployed app rather than with component/unit tests, given the project's
   time constraints; this is the area with the least automated coverage.
 
 ## If you're picking this up next
 
-The highest-value next test to add is a Postgres-backed integration test
-for `/bounties/:id/sync-evaluation` (`apps/api/src/routes/evaluation-sync.ts`)
-— it's the most complex single piece of business logic in the backend
-(mapping on-chain state to DB rows, writing reputation events exactly once,
-publishing the Truth Record exactly once) and currently has zero automated
-coverage.
+The next highest-value test is a real localnet evaluation/settlement test:
+it should exercise the non-deterministic evaluation round and assert the
+resulting corroboration, reputation, and Truth Record writes. The refund E2E
+test intentionally uses the deterministic timeout recovery path so it is
+repeatable without an LLM service.

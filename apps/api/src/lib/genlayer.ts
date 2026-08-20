@@ -1,5 +1,5 @@
 import { createClient } from "genlayer-js";
-import { studionet } from "genlayer-js/chains";
+import { localnet, studionet } from "genlayer-js/chains";
 import { config } from "./config.js";
 
 /**
@@ -20,7 +20,7 @@ export function getGenlayerClient() {
   }
   if (!client) {
     client = createClient({
-      chain: studionet,
+      chain: config.genlayer.network === "localnet" ? localnet : studionet,
       endpoint: config.genlayer.rpcUrl || undefined,
     });
   }

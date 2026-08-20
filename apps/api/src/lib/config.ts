@@ -25,6 +25,9 @@ export const config = {
   genlayer: {
     rpcUrl: process.env.GENLAYER_RPC_URL ?? "",
     contractAddress: process.env.GENLAYER_CONTRACT_ADDRESS ?? "",
+    // StudioNet is the only production network. Localnet exists solely for
+    // the real-contract E2E suite and is never enabled by deployment config.
+    network: process.env.GENLAYER_NETWORK === "localnet" ? "localnet" : "studionet",
     // A dedicated, backend-owned wallet used ONLY by the deadline watcher
     // (lib/deadline-watcher.ts) to call the contract's permissionless
     // evaluate_bounty/settle/claim_timeout_refund once their respective
